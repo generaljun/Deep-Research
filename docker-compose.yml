@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  deep-research-web:
+    build: .
+    container_name: deep-research-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # 挂载本地目录用于保存生成的 Markdown 报告
+      - ./reports:/app/reports
+      # 挂载本地目录用于保存 SQLite 数据库配置
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+    # 【极其重要】强制容器网关走 iStoreOS (假设 iStoreOS IP 为 192.168.10.101)
+    # 这样可以确保 TG 的请求走 IPv4 并被 Passwall 代理，防止 IPv6 漏网
+    dns:
+      - 192.168.10.101

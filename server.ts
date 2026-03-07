@@ -1,0 +1,865 @@
+import express from 'express';
+import cors from 'cors';
+import { createServer as createViteServer } from 'vite';
+import OpenAI from 'openai';
+import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import Database from 'better-sqlite3';
+import { EventEmitter } from 'events';
+import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { SocksProxyAgent } from 'socks-proxy-agent';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = 3000;
+
+app.use(cors());
+app.use(express.json());
+
+// ==========================================
+// 1. Logging Setup (with rotation)
+// ==========================================
+const logDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+
+const getLogFile = () => path.join(logDir, `app-${new Date().toISOString().split('T')[0]}.log`);
+
+const logger = {
+  info: (msg: string) => appendLog('INFO', msg),
+  warn: (msg: string) => appendLog('WARN', msg),
+  error: (msg: string) => appendLog('ERROR', msg),
+};
+
+function appendLog(level: string, msg: string) {
+  const timestamp = new Date().toISOString();
+  const line = `[${timestamp}] [${level}] ${msg}\n`;
+  console.log(line.trim());
+  fs.appendFileSync(getLogFile(), line);
+}
+
+function appendTaskLog(taskId: string, level: string, msg: string) {
+  const timestamp = new Date().toISOString();
+  const line = `[${timestamp}] [${level}] ${msg}\n`;
+  const taskLogFile = path.join(logDir, `task-${taskId}.log`);
+  fs.appendFileSync(taskLogFile, line);
+  
+  // Keep only 10 most recent task logs
+  try {
+    const files = fs.readdirSync(logDir).filter(f => f.startsWith('task-') && f.endsWith('.log'));
+    if (files.length > 10) {
+      const sortedFiles = files.map(f => ({
+        name: f,
+        time: fs.statSync(path.join(logDir, f)).mtime.getTime()
+      })).sort((a, b) => b.time - a.time);
+      
+      const filesToDelete = sortedFiles.slice(10);
+      filesToDelete.forEach(f => {
+        fs.unlinkSync(path.join(logDir, f.name));
+      });
+    }
+  } catch (e) {
+    console.error('Task log rotation failed:', e);
+  }
+}
+
+// Clean logs older than 7 days
+setInterval(() => {
+  try {
+    const files = fs.readdirSync(logDir);
+    const now = Date.now();
+    files.forEach(file => {
+      const filePath = path.join(logDir, file);
+      const stats = fs.statSync(filePath);
+      if (now - stats.mtimeMs > 7 * 24 * 60 * 60 * 1000) {
+        fs.unlinkSync(filePath);
+        logger.info(`Deleted old log file: ${file}`);
+      }
+    });
+  } catch (e) {
+    console.error('Log rotation failed:', e);
+  }
+}, 24 * 60 * 60 * 1000);
+
+// ==========================================
+// 2. Database Setup (SQLite)
+// ==========================================
+const dataDir = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+
+const dbPath = process.env.DB_PATH || path.join(dataDir, 'database.sqlite');
+const db = new Database(dbPath);
+db.pragma('journal_mode = WAL'); // 开启 WAL 模式，提升并发性能
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
+  CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    topic TEXT,
+    status TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE,
+    password_hash TEXT,
+    salt TEXT,
+    role TEXT,
+    must_change_password INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS login_attempts (
+    ip TEXT PRIMARY KEY,
+    attempts INTEGER DEFAULT 0,
+    tier INTEGER DEFAULT 0,
+    lock_until DATETIME
+  );
+`);
+
+// 僵尸任务自愈机制：启动时将所有 running 状态的任务重置为 failed
+const zombieTasks = db.prepare("UPDATE tasks SET status = 'failed' WHERE status = 'running'").run();
+if (zombieTasks.changes > 0) {
+  logger.warn(`[系统自愈] 发现并清理了 ${zombieTasks.changes} 个因系统意外重启导致的僵尸任务。`);
+}
+
+const getSetting = (key: string, defaultValue = '') => {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as any;
+  return row ? row.value : defaultValue;
+};
+
+const setSetting = (key: string, value: string) => {
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+};
+
+// ==========================================
+// 3. Auth & Security Helpers
+// ==========================================
+let jwtSecret = getSetting('jwt_secret');
+if (!jwtSecret) {
+  jwtSecret = crypto.randomBytes(32).toString('hex');
+  setSetting('jwt_secret', jwtSecret);
+}
+
+const hashPassword = (password: string, salt: string) => {
+  return crypto.scryptSync(password, salt, 64).toString('hex');
+};
+
+// Initialize default admin if no users exist
+const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
+if (userCount.count === 0) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword('admin', salt);
+  db.prepare('INSERT INTO users (id, username, password_hash, salt, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(crypto.randomUUID(), 'admin', hash, salt, 'admin', 1);
+  logger.info('Default admin user created.');
+}
+
+const checkRateLimit = (ip: string) => {
+  const record = db.prepare('SELECT * FROM login_attempts WHERE ip = ?').get(ip) as any;
+  if (record && record.lock_until) {
+    if (new Date(record.lock_until) > new Date()) {
+      const minutesLeft = Math.ceil((new Date(record.lock_until).getTime() - Date.now()) / 60000);
+      throw new Error(`IP 已被锁定，请在 ${minutesLeft} 分钟后重试。`);
+    }
+  }
+};
+
+const recordFailedLogin = (ip: string) => {
+  db.prepare('INSERT OR IGNORE INTO login_attempts (ip, attempts, tier) VALUES (?, 0, 0)').run(ip);
+  db.prepare('UPDATE login_attempts SET attempts = attempts + 1 WHERE ip = ?').run(ip);
+  const record = db.prepare('SELECT * FROM login_attempts WHERE ip = ?').get(ip) as any;
+  
+  let lockUntil = null;
+  if (record.attempts >= 9) {
+    lockUntil = new Date(Date.now() + 24 * 60 * 60 * 1000); // 1 day
+    db.prepare('UPDATE login_attempts SET tier = 3, lock_until = ? WHERE ip = ?').run(lockUntil.toISOString(), ip);
+    logger.warn(`IP ${ip} locked for 24 hours due to 9 failed attempts.`);
+  } else if (record.attempts >= 6) {
+    lockUntil = new Date(Date.now() + 6 * 60 * 60 * 1000); // 6 hours
+    db.prepare('UPDATE login_attempts SET tier = 2, lock_until = ? WHERE ip = ?').run(lockUntil.toISOString(), ip);
+    logger.warn(`IP ${ip} locked for 6 hours due to 6 failed attempts.`);
+  } else if (record.attempts >= 3) {
+    lockUntil = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+    db.prepare('UPDATE login_attempts SET tier = 1, lock_until = ? WHERE ip = ?').run(lockUntil.toISOString(), ip);
+    logger.warn(`IP ${ip} locked for 10 minutes due to 3 failed attempts.`);
+  }
+};
+
+const resetLoginAttempts = (ip: string) => {
+  db.prepare('DELETE FROM login_attempts WHERE ip = ?').run(ip);
+};
+
+// Middleware
+const authenticateToken = (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+  jwt.verify(token, jwtSecret, (err: any, user: any) => {
+    if (err) return res.status(403).json({ error: 'Forbidden' });
+    req.user = user;
+    next();
+  });
+};
+
+const requireAdmin = (req: any, res: any, next: any) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  next();
+};
+
+// ==========================================
+// 4. SSE & Helper Functions
+// ==========================================
+const taskEvents = new EventEmitter();
+
+let currentRunningTask: { taskId: string, username: string, topic: string } | null = null;
+
+const broadcastSystemStatus = () => {
+  const status = JSON.stringify({
+    type: 'system_status',
+    data: { isBusy: currentRunningTask !== null, currentTask: currentRunningTask }
+  });
+  taskEvents.emit('system_status', status);
+};
+
+const broadcastLog = (taskId: string, message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
+  const logEntry = JSON.stringify({ timestamp: new Date().toISOString(), message, type });
+  taskEvents.emit(`log-${taskId}`, logEntry);
+  logger.info(`[Task ${taskId}] ${message}`);
+  appendTaskLog(taskId, type.toUpperCase(), message);
+};
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      if (i === retries - 1) throw error;
+      logger.warn(`[Retry ${i + 1}/${retries}] Error: ${error.message}. Retrying in ${delay}ms...`);
+      await sleep(delay);
+      delay *= 2;
+    }
+  }
+  throw new Error('Unreachable');
+};
+
+const getProxyAgent = (proxyUrl: string) => {
+  if (!proxyUrl) return undefined;
+  if (proxyUrl.startsWith('socks')) {
+    return new SocksProxyAgent(proxyUrl);
+  }
+  return new HttpsProxyAgent(proxyUrl);
+};
+
+const getLLMClient = () => {
+  const apiKey = getSetting('aliyun_api_key');
+  const baseURL = getSetting('llm_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1');
+  if (!apiKey) throw new Error('未配置大模型 API Key，请前往后台设置。');
+  
+  const options: any = { apiKey, baseURL };
+  return new OpenAI(options);
+};
+
+const searchBocha = async (query: string) => {
+  const apiKey = getSetting('bocha_api_key');
+  if (!apiKey) throw new Error('未配置博查 API Key，请前往后台设置。');
+  
+  const axiosConfig: any = {
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+  };
+
+  const response = await axios.post(
+    'https://api.bochaai.com/v1/web-search',
+    { query, freshness: "noLimit", summary: true, count: 10 },
+    axiosConfig
+  );
+  
+  const results = response.data?.data?.webPages?.value || [];
+  return results.slice(0, 8).map((r: any) => `- [${r.name}](${r.url}): ${r.snippet}`).join('\n');
+};
+
+const sendNotifications = async (message: string) => {
+  const tgToken = getSetting('tg_bot_token');
+  const tgChatId = getSetting('tg_chat_id');
+  const feishuWebhook = getSetting('feishu_webhook');
+  const proxyUrl = getSetting('http_proxy');
+
+  if (tgToken && tgChatId) {
+    const axiosConfig: any = { family: 4 };
+    if (proxyUrl) {
+      const agent = getProxyAgent(proxyUrl);
+      axiosConfig.httpsAgent = agent;
+      axiosConfig.httpAgent = agent;
+    }
+    try {
+      await axios.post(`https://api.telegram.org/bot${tgToken}/sendMessage`, 
+        { chat_id: tgChatId, text: message },
+        axiosConfig
+      );
+    } catch (e: any) { logger.error(`TG Notification failed: ${e.message}`); }
+  }
+
+  if (feishuWebhook) {
+    try {
+      await axios.post(feishuWebhook, { msg_type: "text", content: { text: message } });
+    } catch (e: any) { logger.error(`Feishu Notification failed: ${e.message}`); }
+  }
+};
+
+// ==========================================
+// 5. Core Deep Research Engine & Queue
+// ==========================================
+let runningTask: { id: string, topic: string, user: string, progress: number, status: string } | null = null;
+let taskQueue: { id: string, topic: string, user: string }[] = [];
+
+const runDeepResearch = async (taskId: string, topic: string, length: string, user: string) => {
+  runningTask = { id: taskId, topic, user, progress: 0, status: 'running' };
+  const reportsDir = path.join(__dirname, 'reports');
+  if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
+  
+  const filePath = path.join(reportsDir, `Report_${taskId}.md`);
+  const modelPlanner = getSetting('model_planner', 'qwen-coder-plus');
+  const modelWriter = getSetting('model_writer', 'qwen-plus');
+
+  try {
+    broadcastLog(taskId, `🚀 任务启动：${topic}`, 'success');
+    await sendNotifications(`🚀 深度研究已启动！\n课题：${topic}\n任务ID：${taskId}`);
+
+    broadcastLog(taskId, `🧠 正在调用规划师 (${modelPlanner}) 生成大纲...`);
+    const client = getLLMClient();
+    
+    const plannerPrompt = `你是一个只输出 JSON 的数据转换接口。请根据用户探讨的课题：【${topic}】，生成一份深度研究报告大纲。
+预期篇幅：${length}字。必须融入行业特性。
+【致命约束】
+1. 绝对禁止输出任何 Markdown 标记（如 \`\`\`json）、禁止输出任何问候语或解释。
+2. 必须严格遵守以下 JSON 结构：
+{
+  "report_title": "报告主标题",
+  "chapters": [
+    {
+      "chapter_num": 1,
+      "chapter_title": "第一章：...",
+      "core_points": "本章需要探讨的核心论点..."
+    }
+  ]
+}`;
+
+    let outline;
+    try {
+      const plannerRes = await withRetry(() => client.chat.completions.create({
+        model: modelPlanner,
+        messages: [{ role: 'user', content: plannerPrompt }],
+        temperature: 0.1,
+      }));
+
+      let rawJson = plannerRes.choices[0].message.content || '';
+      rawJson = rawJson.replace(/```json/g, '').replace(/```/g, '').trim();
+      outline = JSON.parse(rawJson);
+    } catch (e: any) {
+      const errCode = e.response?.status || e.code || 'UNKNOWN';
+      throw new Error(`[大纲规划模块] 生成大纲失败。错误代码: ${errCode}, 原因: ${e.message}`);
+    }
+
+    runningTask.progress = 10;
+    broadcastLog(taskId, `✅ 大纲生成完毕，共 ${outline.chapters.length} 章。准备写入本地文件...`, 'success');
+    
+    fs.writeFileSync(filePath, `# ${outline.report_title}\n\n> 本报告由 Deep Research Web 自动生成。\n> 课题：${topic}\n\n---\n\n`);
+
+    for (let i = 0; i < outline.chapters.length; i++) {
+      const chapter = outline.chapters[i];
+      runningTask.progress = 10 + Math.floor((i / outline.chapters.length) * 80);
+      broadcastLog(taskId, `🔍 开始处理：${chapter.chapter_title}`);
+      
+      let searchResults = '';
+      try {
+        broadcastLog(taskId, `🌐 正在调用博查 API 检索素材...`);
+        searchResults = await withRetry(() => searchBocha(`${chapter.chapter_title} ${chapter.core_points}`));
+        broadcastLog(taskId, `✅ 检索完成，获取到有效参考素材。`, 'success');
+      } catch (e: any) {
+        const errCode = e.response?.status || e.code || 'UNKNOWN';
+        broadcastLog(taskId, `⚠️ [检索模块] 检索失败，将基于大模型自身知识撰写。错误代码: ${errCode}, 原因: ${e.message}`, 'warning');
+        searchResults = '检索失败，请基于大模型自身知识撰写。';
+      }
+
+      try {
+        broadcastLog(taskId, `✍️ 正在调用撰稿人 (${modelWriter}) 撰写本章正文...`);
+        const writerPrompt = `你是一位顶级的行业资深撰稿人。请根据【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
+【行文要求】
+1. 深度剖析：不要只做数据的堆砌，必须对数据背后的商业逻辑、技术瓶颈进行深度推演。
+2. 格式要求：必须使用标准的 Markdown 格式排版（合理使用二级/三级标题、加粗、数据表格）。
+3. 严禁废话：直接输出正文，绝对不要输出“好的”、“以下是为您撰写的内容”等废话。
+4. 严谨性：数据和事实必须严格依据【参考素材】，不得产生幻觉。
+5. 溯源要求：报告中主要结论和数据必须有出处注释（如：[来源：xxx]）。注释不计入总字数。
+
+章节标题：${chapter.chapter_title}
+核心论点：${chapter.core_points}
+
+参考素材：
+${searchResults}`;
+
+        const writerRes = await withRetry(() => client.chat.completions.create({
+          model: modelWriter,
+          messages: [{ role: 'user', content: writerPrompt }],
+          temperature: 0.6,
+        }));
+
+        const content = writerRes.choices[0].message.content || '';
+        
+        fs.appendFileSync(filePath, `## ${chapter.chapter_title}\n\n${content}\n\n`);
+        broadcastLog(taskId, `💾 本章已追加写入本地硬盘。`, 'success');
+
+      } catch (e: any) {
+        const errCode = e.response?.status || e.code || 'UNKNOWN';
+        broadcastLog(taskId, `❌ [撰写模块] 本章撰写失败。错误代码: ${errCode}, 原因: ${e.message}。已写入降级占位符。`, 'error');
+        fs.appendFileSync(filePath, `## ${chapter.chapter_title}\n\n>[系统提示：本章节生成超时或API无响应，为防止工作流中断已跳过，请人工补充]\n\n`);
+      }
+
+      if (chapter.chapter_num < outline.chapters.length) {
+        broadcastLog(taskId, `⏳ 触发防限流机制，休眠 15 秒...`, 'info');
+        await sleep(15000);
+      }
+    }
+
+    runningTask.progress = 100;
+    broadcastLog(taskId, `🎉 全文撰写完毕！报告已保存至：${filePath}`, 'success');
+    db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run('completed', taskId);
+    await sendNotifications(`🎉 深度研究报告生成完毕！\n课题：${topic}\n请前往 NAS 目录查看：${filePath}`);
+    taskEvents.emit(`done-${taskId}`);
+
+  } catch (error: any) {
+    const errCode = error.response?.status || error.code || 'UNKNOWN';
+    logger.error(`[Task ${taskId}] Fatal Error: ${error.message}`);
+    broadcastLog(taskId, `❌ [核心调度模块] 发生致命错误。错误代码: ${errCode}, 原因: ${error.message}`, 'error');
+    db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run('failed', taskId);
+    await sendNotifications(`❌ 深度研究任务失败！\n课题：${topic}\n错误代码：${errCode}\n错误信息：${error.message}`);
+    taskEvents.emit(`done-${taskId}`);
+  } finally {
+    runningTask = null;
+    if (taskQueue.length > 0) {
+      const nextTask = taskQueue.shift()!;
+      runDeepResearch(nextTask.id, nextTask.topic, '2000', nextTask.user);
+    }
+  }
+};
+
+// ==========================================
+// 6. API Routes
+// ==========================================
+
+// Setup Wizard API
+app.get('/api/system/status', (req, res) => {
+  const isInitialized = !!getSetting('aliyun_api_key');
+  res.json({ initialized: isInitialized });
+});
+
+app.post('/api/system/setup', (req, res) => {
+  const isInitialized = !!getSetting('aliyun_api_key');
+  if (isInitialized) return res.status(403).json({ error: '系统已初始化，禁止重复设置' });
+
+  const { adminPassword, ...settings } = req.body;
+  
+  // Update admin password
+  if (adminPassword) {
+    const adminUser = db.prepare("SELECT * FROM users WHERE username = 'admin'").get() as any;
+    if (adminUser) {
+      const newSalt = crypto.randomBytes(16).toString('hex');
+      const newHash = hashPassword(adminPassword, newSalt);
+      db.prepare('UPDATE users SET password_hash = ?, salt = ?, must_change_password = 0 WHERE username = ?').run(newHash, newSalt, 'admin');
+    }
+  }
+
+  // Save settings
+  for (const [key, value] of Object.entries(settings)) {
+    setSetting(key, value as string);
+  }
+
+  logger.info('System initialized via Setup Wizard.');
+  res.json({ success: true });
+});
+
+// Test API Connections
+app.post('/api/test/llm', async (req, res) => {
+  const { aliyun_api_key, llm_base_url, model_planner } = req.body;
+  try {
+    const client = new OpenAI({ apiKey: aliyun_api_key, baseURL: llm_base_url || 'https://dashscope.aliyuncs.com/compatible-mode/v1' });
+    const response = await client.chat.completions.create({
+      model: model_planner || 'qwen-plus',
+      messages: [{ role: 'user', content: 'Hello' }],
+      max_tokens: 10
+    });
+    res.json({ success: true, message: 'LLM 连接成功！' });
+  } catch (e: any) {
+    res.status(400).json({ error: `LLM 连接失败: ${e.message}` });
+  }
+});
+
+app.post('/api/test/search', async (req, res) => {
+  const { bocha_api_key } = req.body;
+  try {
+    const response = await axios.post(
+      'https://api.bochaai.com/v1/web-search',
+      { query: 'test', count: 1 },
+      { headers: { 'Authorization': `Bearer ${bocha_api_key}`, 'Content-Type': 'application/json' } }
+    );
+    if (response.data?.code === 200 || response.data?.data) {
+      res.json({ success: true, message: '检索服务连接成功！' });
+    } else {
+      res.status(400).json({ error: `检索服务连接失败: ${JSON.stringify(response.data)}` });
+    }
+  } catch (e: any) {
+    res.status(400).json({ error: `检索服务连接失败: ${e.message}` });
+  }
+});
+
+app.post('/api/test/push', async (req, res) => {
+  const { tg_bot_token, tg_chat_id, feishu_webhook, http_proxy } = req.body;
+  let successMsg = '';
+  let errorMsg = '';
+  
+  if (tg_bot_token && tg_chat_id) {
+    const axiosConfig: any = { family: 4 };
+    if (http_proxy) {
+      const agent = getProxyAgent(http_proxy);
+      axiosConfig.httpsAgent = agent;
+      axiosConfig.httpAgent = agent;
+    }
+    try {
+      await axios.post(`https://api.telegram.org/bot${tg_bot_token}/sendMessage`, { chat_id: tg_chat_id, text: '测试消息：系统推送配置成功！' }, axiosConfig);
+      successMsg += 'Telegram 推送成功！';
+    } catch (e: any) {
+      errorMsg += `Telegram 失败: ${e.message} `;
+    }
+  }
+  
+  if (feishu_webhook) {
+    try {
+      await axios.post(feishu_webhook, { msg_type: "text", content: { text: '测试消息：系统推送配置成功！' } });
+      successMsg += '飞书推送成功！';
+    } catch (e: any) {
+      errorMsg += `飞书失败: ${e.message}`;
+    }
+  }
+  
+  if (errorMsg) {
+    res.status(400).json({ error: errorMsg });
+  } else if (successMsg) {
+    res.json({ success: true, message: successMsg });
+  } else {
+    res.status(400).json({ error: '未配置任何推送服务' });
+  }
+});
+
+// Logs API
+app.get('/api/logs', authenticateToken, requireAdmin, (req, res) => {
+  try {
+    const logDir = path.join(__dirname, 'logs');
+    if (!fs.existsSync(logDir)) return res.json([]);
+    const files = fs.readdirSync(logDir).filter(f => f.endsWith('.log'));
+    const logs = files.map(f => {
+      const stats = fs.statSync(path.join(logDir, f));
+      return { filename: f, size: stats.size, createdAt: stats.birthtime };
+    }).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    res.json(logs);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
+app.get('/api/logs/:filename', authenticateToken, requireAdmin, (req, res) => {
+  const filepath = path.join(__dirname, 'logs', req.params.filename);
+  if (fs.existsSync(filepath)) {
+    res.download(filepath);
+  } else {
+    res.status(404).send('File not found');
+  }
+});
+
+app.delete('/api/logs', authenticateToken, requireAdmin, (req, res) => {
+  try {
+    const logDir = path.join(__dirname, 'logs');
+    if (fs.existsSync(logDir)) {
+      const files = fs.readdirSync(logDir).filter(f => f.endsWith('.log'));
+      files.forEach(f => fs.unlinkSync(path.join(logDir, f)));
+    }
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Auth API
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+
+  try {
+    checkRateLimit(ip);
+  } catch (e: any) {
+    return res.status(429).json({ error: e.message });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
+  if (!user) {
+    recordFailedLogin(ip);
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  const hash = hashPassword(password, user.salt);
+  if (hash !== user.password_hash) {
+    recordFailedLogin(ip);
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  resetLoginAttempts(ip);
+  logger.info(`User ${username} logged in successfully from ${ip}`);
+
+  const token = jwt.sign(
+    { id: user.id, username: user.username, role: user.role, mustChangePassword: user.must_change_password === 1 },
+    jwtSecret,
+    { expiresIn: '7d' }
+  );
+
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role, mustChangePassword: user.must_change_password === 1 } });
+});
+
+app.post('/api/auth/change-password', authenticateToken, (req: any, res: any) => {
+  const { oldPassword, newPassword } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id) as any;
+  
+  const oldHash = hashPassword(oldPassword, user.salt);
+  if (oldHash !== user.password_hash) {
+    return res.status(400).json({ error: '旧密码错误' });
+  }
+
+  const newSalt = crypto.randomBytes(16).toString('hex');
+  const newHash = hashPassword(newPassword, newSalt);
+
+  db.prepare('UPDATE users SET password_hash = ?, salt = ?, must_change_password = 0 WHERE id = ?')
+    .run(newHash, newSalt, user.id);
+  
+  logger.info(`User ${user.username} changed their password.`);
+  res.json({ success: true });
+});
+
+// User Management API (Admin Only)
+app.get('/api/users', authenticateToken, requireAdmin, (req, res) => {
+  const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
+  res.json(users);
+});
+
+app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
+  const { username, password, role } = req.body;
+  try {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = hashPassword(password, salt);
+    db.prepare('INSERT INTO users (id, username, password_hash, salt, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(crypto.randomUUID(), username, hash, salt, role || 'user', 1);
+    logger.info(`Admin created new user: ${username}`);
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(400).json({ error: 'Username may already exist' });
+  }
+});
+
+app.delete('/api/users/:id', authenticateToken, requireAdmin, (req: any, res: any) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  logger.info(`Admin deleted user: ${req.params.id}`);
+  res.json({ success: true });
+});
+
+// Settings API
+app.get('/api/settings', authenticateToken, requireAdmin, (req, res) => {
+  const keys = ['aliyun_api_key', 'llm_base_url', 'model_planner', 'model_writer', 'bocha_api_key', 'tg_bot_token', 'tg_chat_id', 'feishu_webhook', 'http_proxy'];
+  const settings: Record<string, string> = {};
+  keys.forEach(k => settings[k] = getSetting(k));
+  res.json(settings);
+});
+
+app.post('/api/settings', authenticateToken, requireAdmin, (req, res) => {
+  const settings = req.body;
+  for (const [key, value] of Object.entries(settings)) {
+    setSetting(key, value as string);
+  }
+  logger.info(`Admin updated settings.`);
+  res.json({ success: true });
+});
+
+// Task API
+app.post('/api/research', authenticateToken, (req, res) => {
+  const { topic, length } = req.body;
+  if (!topic) return res.status(400).json({ error: 'Topic is required' });
+
+  const taskId = Date.now().toString();
+  db.prepare('INSERT INTO tasks (id, topic, status) VALUES (?, ?, ?)').run(taskId, topic, 'running');
+  
+  const user = (req as any).user.username;
+  db.prepare('INSERT INTO tasks (id, topic, status) VALUES (?, ?, ?)').run(taskId, topic, 'running');
+  
+  logger.info(`User ${user} started research task: ${topic}`);
+  runDeepResearch(taskId, topic, length, user);
+  
+  res.json({ taskId, message: 'Task started successfully' });
+});
+
+// Reports API
+app.get('/api/reports', authenticateToken, (req, res) => {
+  try {
+    const reportsDir = path.join(__dirname, 'reports');
+    if (!fs.existsSync(reportsDir)) return res.json([]);
+    
+    const files = fs.readdirSync(reportsDir).filter(f => f.endsWith('.md'));
+    const reports = files.map(f => {
+      const stats = fs.statSync(path.join(reportsDir, f));
+      return { filename: f, size: stats.size, createdAt: stats.birthtime };
+    }).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    res.json(reports);
+  } catch (e) {
+    logger.error(`Error reading reports: ${e}`);
+    res.json([]);
+  }
+});
+
+app.get('/api/reports/:filename', authenticateToken, (req, res) => {
+  const filepath = path.join(__dirname, 'reports', req.params.filename);
+  if (fs.existsSync(filepath)) {
+    res.download(filepath);
+  } else {
+    res.status(404).send('File not found');
+  }
+});
+
+// SSE Endpoint (Auth via query param)
+app.get('/api/system-status/stream', (req, res) => {
+  const token = req.query.token as string;
+  try {
+    jwt.verify(token, jwtSecret);
+  } catch (e) {
+    return res.status(401).send('Unauthorized');
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const onStatus = (data: string) => res.write(`data: ${data}\n\n`);
+  
+  // Send initial status
+  res.write(`data: ${JSON.stringify({
+    type: 'system_status',
+    data: { isBusy: currentRunningTask !== null, currentTask: currentRunningTask }
+  })}\n\n`);
+
+  taskEvents.on('system_status', onStatus);
+
+  req.on('close', () => {
+    taskEvents.off('system_status', onStatus);
+  });
+});
+
+app.get('/api/research/:id/stream', (req, res) => {
+  const token = req.query.token as string;
+  try {
+    jwt.verify(token, jwtSecret);
+  } catch (e) {
+    return res.status(401).send('Unauthorized');
+  }
+
+  const taskId = req.params.id;
+  
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const onLog = (data: string) => res.write(`data: ${data}\n\n`);
+  const onDone = () => res.write(`event: done\ndata: {}\n\n`);
+
+  taskEvents.on(`log-${taskId}`, onLog);
+  taskEvents.on(`done-${taskId}`, onDone);
+
+  // SSE 心跳保活机制 (Heartbeat) - 防止反向代理 (如 Nginx) 超时断开连接
+  const heartbeatInterval = setInterval(() => {
+    res.write(':\n\n'); // 发送空注释作为心跳包
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeatInterval);
+    taskEvents.off(`log-${taskId}`, onLog);
+    taskEvents.off(`done-${taskId}`, onDone);
+  });
+});
+
+// Chat API (for outline generation)
+app.post('/api/chat', authenticateToken, async (req, res) => {
+  try {
+    const client = getLLMClient();
+    const response = await client.chat.completions.create({
+      model: getSetting('model_planner', 'qwen-coder-plus'),
+      messages: req.body.messages,
+    });
+    res.json({ reply: response.choices[0].message.content });
+  } catch (e: any) {
+    logger.error(`Chat API Error: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/generate-outline', authenticateToken, async (req, res) => {
+  try {
+    const { topic, length } = req.body;
+    const client = getLLMClient();
+    const prompt = `你是一个只输出 JSON 的数据转换接口。请根据用户探讨的课题：【${topic}】，生成一份深度研究报告大纲。预期篇幅：${length}字。
+必须严格遵守以下 JSON 结构：
+{
+  "report_title": "报告主标题",
+  "chapters": [
+    {
+      "chapter_num": 1,
+      "chapter_title": "第一章：...",
+      "core_points": "本章需要探讨的核心论点..."
+    }
+  ]
+}`;
+    const response = await client.chat.completions.create({
+      model: getSetting('model_planner', 'qwen-coder-plus'),
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+    });
+    let rawJson = response.choices[0].message.content || '';
+    rawJson = rawJson.replace(/```json/g, '').replace(/```/g, '').trim();
+    res.json(JSON.parse(rawJson));
+  } catch (e: any) {
+    logger.error(`Outline Gen Error: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==========================================
+// 7. Server Startup
+// ==========================================
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
+    app.use(vite.middlewares);
+  } else {
+    app.use(express.static(path.join(__dirname, 'dist')));
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    logger.info(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
