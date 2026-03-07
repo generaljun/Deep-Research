@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Install su-exec for privilege dropping and build tools for native modules (better-sqlite3)
 RUN apk add --no-cache su-exec python3 make g++
