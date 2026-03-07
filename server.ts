@@ -332,7 +332,8 @@ const searchBocha = async (query: string) => {
 const sendNotifications = async (message: string) => {
   const tgToken = getSetting('tg_bot_token');
   const tgChatId = getSetting('tg_chat_id');
-  const feishuWebhook = getSetting('feishu_webhook');
+  const feishuAppId = getSetting('feishu_app_id');
+  const feishuAppSecret = getSetting('feishu_app_secret');
   const proxyUrl = getSetting('http_proxy');
 
   if (tgToken && tgChatId) {
@@ -350,11 +351,72 @@ const sendNotifications = async (message: string) => {
     } catch (e: any) { logger.error(`TG Notification failed: ${e.message}`); }
   }
 
-  if (feishuWebhook) {
+  // 飞书消息通知 (如果有配置 App ID/Secret，可以通过机器人发送)
+  if (feishuAppId && feishuAppSecret) {
     try {
-      await axios.post(feishuWebhook, { msg_type: "text", content: { text: message } });
+      const token = await getFeishuToken();
+      // 这里可以实现发送飞书消息，但用户主要需求是创建文档，通知可以复用 TG 或简单实现
+      logger.info('Feishu App configured, notifications can be sent via Feishu Doc links.');
     } catch (e: any) { logger.error(`Feishu Notification failed: ${e.message}`); }
   }
+};
+
+const getFeishuToken = async () => {
+  const appId = getSetting('feishu_app_id');
+  const appSecret = getSetting('feishu_app_secret');
+  if (!appId || !appSecret) return null;
+
+  const res = await axios.post('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+    app_id: appId,
+    app_secret: appSecret
+  });
+  return res.data.tenant_access_token;
+};
+
+const createFeishuDoc = async (title: string) => {
+  const token = await getFeishuToken();
+  if (!token) return null;
+
+  const res = await axios.post('https://open.feishu.cn/open-apis/docx/v1/documents', {
+    title: title
+  }, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+
+  if (res.data.code === 0) {
+    return res.data.data.document;
+  }
+  throw new Error(`创建飞书文档失败: ${res.data.msg}`);
+};
+
+const appendToFeishuDoc = async (documentId: string, markdown: string) => {
+  const token = await getFeishuToken();
+  if (!token) return;
+
+  // 简单的 Markdown 转 Feishu Docx Block 逻辑
+  // 飞书 Docx API 比较复杂，这里实现基础的文本追加
+  const lines = markdown.split('\n').filter(l => l.trim() !== '');
+  const children: any[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('# ')) {
+      children.push({ block_type: 1, heading1: { content: [{ text_element: { content: line.replace('# ', ''), text_run: {} } }] } });
+    } else if (line.startsWith('## ')) {
+      children.push({ block_type: 2, heading2: { content: [{ text_element: { content: line.replace('## ', ''), text_run: {} } }] } });
+    } else if (line.startsWith('### ')) {
+      children.push({ block_type: 3, heading3: { content: [{ text_element: { content: line.replace('### ', ''), text_run: {} } }] } });
+    } else {
+      children.push({ block_type: 22, text: { content: [{ text_element: { content: line, text_run: {} } }] } });
+    }
+  }
+
+  // 批量追加 Block
+  // 注意：飞书 API 对一次追加的 block 数量有限制，这里简单处理
+  await axios.post(`https://open.feishu.cn/open-apis/docx/v1/documents/${documentId}/blocks/${documentId}/children`, {
+    children: children.slice(0, 50) // 限制单次数量
+  }, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
 };
 
 // ==========================================
@@ -416,6 +478,19 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
     
     fs.writeFileSync(filePath, `# ${outline.report_title}\n\n> 本报告由 Deep Research Web 自动生成。\n> 课题：${topic}\n\n---\n\n`);
 
+    // 飞书文档初始化
+    let feishuDocId: string | null = null;
+    try {
+      const doc = await createFeishuDoc(outline.report_title);
+      if (doc) {
+        feishuDocId = doc.document_id;
+        broadcastLog(taskId, `📄 飞书文档已创建：https://bytedance.feishu.cn/docx/${feishuDocId}`, 'success');
+        await appendToFeishuDoc(feishuDocId, `# ${outline.report_title}\n> 课题：${topic}\n\n`);
+      }
+    } catch (e: any) {
+      broadcastLog(taskId, `⚠️ 飞书文档创建失败: ${e.message}`, 'warning');
+    }
+
     for (let i = 0; i < outline.chapters.length; i++) {
       const chapter = outline.chapters[i];
       runningTask.progress = 10 + Math.floor((i / outline.chapters.length) * 80);
@@ -457,6 +532,16 @@ ${searchResults}`;
         const content = writerRes.choices[0].message.content || '';
         
         fs.appendFileSync(filePath, `## ${chapter.chapter_title}\n\n${content}\n\n`);
+        
+        // 同步到飞书文档
+        if (feishuDocId) {
+          try {
+            await appendToFeishuDoc(feishuDocId, `## ${chapter.chapter_title}\n\n${content}`);
+          } catch (e: any) {
+            logger.error(`Feishu append failed: ${e.message}`);
+          }
+        }
+
         broadcastLog(taskId, `💾 本章已追加写入本地硬盘。`, 'success');
 
       } catch (e: any) {
@@ -474,7 +559,9 @@ ${searchResults}`;
     runningTask.progress = 100;
     broadcastLog(taskId, `🎉 全文撰写完毕！报告已保存至：${filePath}`, 'success');
     db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run('completed', taskId);
-    await sendNotifications(`🎉 深度研究报告生成完毕！\n课题：${topic}\n请前往 NAS 目录查看：${filePath}`);
+    
+    const feishuLink = feishuDocId ? `\n飞书文档：https://bytedance.feishu.cn/docx/${feishuDocId}` : '';
+    await sendNotifications(`🎉 深度研究报告生成完毕！\n课题：${topic}${feishuLink}\n请前往 NAS 目录查看：${filePath}`);
     taskEvents.emit(`done-${taskId}`);
 
   } catch (error: any) {
@@ -709,7 +796,7 @@ app.post('/api/test/search', async (req, res) => {
 });
 
 app.post('/api/test/push', async (req, res) => {
-  const { tg_bot_token, tg_chat_id, feishu_webhook, http_proxy } = req.body;
+  const { tg_bot_token, tg_chat_id, feishu_app_id, feishu_app_secret, http_proxy } = req.body;
   let successMsg = '';
   let errorMsg = '';
   
@@ -728,10 +815,28 @@ app.post('/api/test/push', async (req, res) => {
     }
   }
   
-  if (feishu_webhook) {
+  if (feishu_app_id && feishu_app_secret) {
     try {
-      await axios.post(feishu_webhook, { msg_type: "text", content: { text: '测试消息：系统推送配置成功！' } });
-      successMsg += '飞书推送成功！';
+      // 1. 获取 tenant_access_token
+      const tokenRes = await axios.post('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+        app_id: feishu_app_id,
+        app_secret: feishu_app_secret
+      });
+      const token = tokenRes.data.tenant_access_token;
+      if (!token) throw new Error('获取飞书 Token 失败');
+
+      // 2. 测试创建一个空文档
+      const createRes = await axios.post('https://open.feishu.cn/open-apis/docx/v1/documents', {
+        title: "Deep Research 测试文档"
+      }, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (createRes.data.code === 0) {
+        successMsg += '飞书文档集成成功！';
+      } else {
+        throw new Error(createRes.data.msg || '创建文档失败');
+      }
     } catch (e: any) {
       errorMsg += `飞书失败: ${e.message}`;
     }

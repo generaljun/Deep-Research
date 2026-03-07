@@ -15,7 +15,8 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
     bocha_api_key: '',
     tg_bot_token: '',
     tg_chat_id: '',
-    feishu_webhook: '',
+    feishu_app_id: '',
+    feishu_app_secret: '',
     http_proxy: ''
   });
 
@@ -253,13 +254,19 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                     <input type="text" value={settings.tg_chat_id} onChange={e => handleChange('tg_chat_id', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">飞书 Webhook</label>
-                  <input type="text" value={settings.feishu_webhook} onChange={e => handleChange('feishu_webhook', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">飞书 App ID</label>
+                    <input type="text" value={settings.feishu_app_id} onChange={e => handleChange('feishu_app_id', e.target.value)} placeholder="cli_..." className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">飞书 App Secret</label>
+                    <input type="password" value={settings.feishu_app_secret} onChange={e => handleChange('feishu_app_secret', e.target.value)} placeholder="***" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  </div>
                 </div>
                 <button 
                   onClick={() => testConnection('push')}
-                  disabled={testStatus.push === 'loading' || (!settings.tg_bot_token && !settings.feishu_webhook)}
+                  disabled={testStatus.push === 'loading' || (!settings.tg_bot_token && !settings.feishu_app_id)}
                   className="w-full mt-4 bg-slate-100 hover:bg-slate-200 dark:bg-cyan-900/30 dark:hover:bg-cyan-800/50 text-slate-700 dark:text-cyan-300 font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
                 >
                   {testStatus.push === 'loading' ? <Loader2 className="w-5 h-5 animate-spin" /> : '测试推送'}
