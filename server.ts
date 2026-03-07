@@ -14,8 +14,15 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import os from 'os';
 
 const execAsync = promisify(exec);
+
+console.log('------------------------------------------------');
+console.log(`🚀 Server starting...`);
+console.log(`💻 System: ${os.platform()} (${os.arch()})`);
+console.log(`📦 Node: ${process.version}`);
+console.log('------------------------------------------------');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -93,40 +100,52 @@ setInterval(() => {
 // ==========================================
 // 2. Database Setup (SQLite)
 // ==========================================
-const dataDir = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+let db: Database.Database;
+try {
+  const dataDir = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data');
+  if (!fs.existsSync(dataDir)) {
+    console.log(`Creating data directory: ${dataDir}`);
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
 
-const dbPath = process.env.DB_PATH || path.join(dataDir, 'database.sqlite');
-const db = new Database(dbPath);
-db.pragma('journal_mode = WAL'); // 开启 WAL 模式，提升并发性能
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
-  );
-  CREATE TABLE IF NOT EXISTS tasks (
-    id TEXT PRIMARY KEY,
-    topic TEXT,
-    status TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT UNIQUE,
-    password_hash TEXT,
-    salt TEXT,
-    role TEXT,
-    must_change_password INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS login_attempts (
-    ip TEXT PRIMARY KEY,
-    attempts INTEGER DEFAULT 0,
-    tier INTEGER DEFAULT 0,
-    lock_until DATETIME
-  );
-`);
+  const dbPath = process.env.DB_PATH || path.join(dataDir, 'database.sqlite');
+  console.log(`Initializing database at: ${dbPath}`);
+  db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      topic TEXT,
+      status TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE,
+      password_hash TEXT,
+      salt TEXT,
+      role TEXT,
+      must_change_password INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      ip TEXT PRIMARY KEY,
+      attempts INTEGER DEFAULT 0,
+      tier INTEGER DEFAULT 0,
+      lock_until DATETIME
+    );
+  `);
+  console.log('Database initialized successfully');
+} catch (err) {
+  console.error('CRITICAL: Database initialization failed!');
+  console.error(err);
+  process.exit(1);
+}
 
 // 僵尸任务自愈机制：启动时将所有 running 状态的任务重置为 failed
 const zombieTasks = db.prepare("UPDATE tasks SET status = 'failed' WHERE status = 'running'").run();
