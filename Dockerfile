@@ -1,7 +1,7 @@
 FROM node:22-alpine
 
-# Install su-exec for privilege dropping and build tools for native modules (better-sqlite3)
-RUN apk add --no-cache su-exec python3 make g++
+# Install su-exec for privilege dropping, git for updates, and build tools for native modules
+RUN apk add --no-cache su-exec git python3 make g++
 
 WORKDIR /app
 
@@ -19,4 +19,4 @@ EXPOSE 3000
 
 # Use the entrypoint script to handle PUID/PGID
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["npm", "start"]
+CMD ["npx", "tsx", "server.ts"]
