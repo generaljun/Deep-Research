@@ -287,19 +287,37 @@ const getProxyAgent = (proxyUrl: string) => {
 const getLLMClient = () => {
   const apiKey = getSetting('aliyun_api_key');
   const baseURL = getSetting('llm_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1');
+  const proxyUrl = getSetting('http_proxy');
+  
   if (!apiKey) throw new Error('未配置大模型 API Key，请前往后台设置。');
   
   const options: any = { apiKey, baseURL };
+  if (proxyUrl) {
+    const agent = getProxyAgent(proxyUrl);
+    options.httpAgent = agent;
+    options.httpsAgent = agent;
+  }
+  
   return new OpenAI(options);
 };
 
 const searchBocha = async (query: string) => {
   const apiKey = getSetting('bocha_api_key');
+  const proxyUrl = getSetting('http_proxy');
+  
   if (!apiKey) throw new Error('未配置博查 API Key，请前往后台设置。');
   
   const axiosConfig: any = {
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    family: 4 // 强制使用 IPv4，解决部分 NAS 环境 IPv6 路由问题
   };
+
+  if (proxyUrl) {
+    const agent = getProxyAgent(proxyUrl);
+    axiosConfig.httpsAgent = agent;
+    axiosConfig.httpAgent = agent;
+    axiosConfig.proxy = false;
+  }
 
   const response = await axios.post(
     'https://api.bochaai.com/v1/web-search',
@@ -567,9 +585,21 @@ app.post('/api/system/setup', (req, res) => {
 
 // Test API Connections
 app.post('/api/test/llm', async (req, res) => {
-  const { aliyun_api_key, llm_base_url, model_planner } = req.body;
+  const { aliyun_api_key, llm_base_url, model_planner, http_proxy } = req.body;
   try {
-    const client = new OpenAI({ apiKey: aliyun_api_key, baseURL: llm_base_url || 'https://dashscope.aliyuncs.com/compatible-mode/v1' });
+    const options: any = { 
+      apiKey: aliyun_api_key, 
+      baseURL: llm_base_url || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      timeout: 20000 // 增加超时设置
+    };
+
+    if (http_proxy) {
+      const agent = getProxyAgent(http_proxy);
+      options.httpAgent = agent;
+      options.httpsAgent = agent;
+    }
+
+    const client = new OpenAI(options);
     const response = await client.chat.completions.create({
       model: model_planner || 'qwen-plus',
       messages: [{ role: 'user', content: 'Hello' }],
@@ -577,17 +607,35 @@ app.post('/api/test/llm', async (req, res) => {
     });
     res.json({ success: true, message: 'LLM 连接成功！' });
   } catch (e: any) {
-    res.status(400).json({ error: `LLM 连接失败: ${e.message}` });
+    logger.error(`LLM Test Error: ${e.message}`);
+    let errorMsg = e.message;
+    if (e.code === 'ECONNREFUSED') errorMsg = '连接被拒绝，请检查 API 地址或代理设置。';
+    if (e.code === 'ETIMEDOUT') errorMsg = '连接超时，请检查网络或代理是否可用。';
+    if (e.code === 'ENOTFOUND') errorMsg = '无法解析域名，请检查 DNS 设置。';
+    res.status(400).json({ error: `LLM 连接失败: ${errorMsg}` });
   }
 });
 
 app.post('/api/test/search', async (req, res) => {
-  const { bocha_api_key } = req.body;
+  const { bocha_api_key, http_proxy } = req.body;
   try {
+    const axiosConfig: any = { 
+      headers: { 'Authorization': `Bearer ${bocha_api_key}`, 'Content-Type': 'application/json' },
+      timeout: 20000,
+      family: 4 
+    };
+
+    if (http_proxy) {
+      const agent = getProxyAgent(http_proxy);
+      axiosConfig.httpsAgent = agent;
+      axiosConfig.httpAgent = agent;
+      axiosConfig.proxy = false;
+    }
+
     const response = await axios.post(
       'https://api.bochaai.com/v1/web-search',
       { query: 'test', count: 1 },
-      { headers: { 'Authorization': `Bearer ${bocha_api_key}`, 'Content-Type': 'application/json' } }
+      axiosConfig
     );
     if (response.data?.code === 200 || response.data?.data) {
       res.json({ success: true, message: '检索服务连接成功！' });
@@ -595,6 +643,7 @@ app.post('/api/test/search', async (req, res) => {
       res.status(400).json({ error: `检索服务连接失败: ${JSON.stringify(response.data)}` });
     }
   } catch (e: any) {
+    logger.error(`Search Test Error: ${e.message}`);
     res.status(400).json({ error: `检索服务连接失败: ${e.message}` });
   }
 });
