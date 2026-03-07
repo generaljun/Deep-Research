@@ -586,39 +586,83 @@ app.post('/api/system/setup', (req, res) => {
 // Test API Connections
 app.post('/api/test/llm', async (req, res) => {
   const { aliyun_api_key, llm_base_url, model_planner, http_proxy } = req.body;
+  const diagnostics: any[] = [];
+  
   try {
+    const url = new URL(llm_base_url || 'https://dashscope.aliyuncs.com/compatible-mode/v1');
+    diagnostics.push(`Testing connectivity to: ${url.hostname}`);
+    
+    // DNS Test
+    try {
+      const dns = await import('dns/promises');
+      const addresses = await dns.resolve(url.hostname);
+      diagnostics.push(`DNS OK: ${addresses.join(', ')}`);
+    } catch (dnsErr: any) {
+      diagnostics.push(`DNS FAILED: ${dnsErr.message}`);
+    }
+
     const options: any = { 
       apiKey: aliyun_api_key, 
       baseURL: llm_base_url || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-      timeout: 20000 // 增加超时设置
+      timeout: 30000,
+      maxRetries: 0
     };
 
     if (http_proxy) {
+      diagnostics.push(`Using proxy: ${http_proxy}`);
       const agent = getProxyAgent(http_proxy);
       options.httpAgent = agent;
       options.httpsAgent = agent;
+    } else {
+      diagnostics.push('No proxy configured in app settings.');
     }
 
     const client = new OpenAI(options);
     const response = await client.chat.completions.create({
       model: model_planner || 'qwen-plus',
       messages: [{ role: 'user', content: 'Hello' }],
-      max_tokens: 10
+      max_tokens: 5
     });
-    res.json({ success: true, message: 'LLM 连接成功！' });
+    
+    res.json({ 
+      success: true, 
+      message: 'LLM 连接成功！',
+      diagnostics 
+    });
   } catch (e: any) {
-    logger.error(`LLM Test Error: ${e.message}`);
+    logger.error(`LLM Test Error: ${e.message} - ${e.stack}`);
     let errorMsg = e.message;
-    if (e.code === 'ECONNREFUSED') errorMsg = '连接被拒绝，请检查 API 地址或代理设置。';
-    if (e.code === 'ETIMEDOUT') errorMsg = '连接超时，请检查网络或代理是否可用。';
-    if (e.code === 'ENOTFOUND') errorMsg = '无法解析域名，请检查 DNS 设置。';
-    res.status(400).json({ error: `LLM 连接失败: ${errorMsg}` });
+    if (e.code === 'ECONNREFUSED') errorMsg = '连接被拒绝。请检查 API 地址或代理设置是否正确。';
+    if (e.code === 'ETIMEDOUT') errorMsg = '连接超时。请检查网络或代理是否可用。';
+    if (e.code === 'ENOTFOUND') errorMsg = '无法解析域名。请检查 NAS 的 DNS 设置。';
+    if (e.message.includes('401')) errorMsg = 'API Key 无效 (401 Unauthorized)。';
+    
+    res.status(400).json({ 
+      error: `LLM 连接失败: ${errorMsg}`,
+      details: e.message,
+      code: e.code,
+      diagnostics
+    });
   }
 });
 
 app.post('/api/test/search', async (req, res) => {
   const { bocha_api_key, http_proxy } = req.body;
+  const diagnostics: any[] = [];
+  
   try {
+    const hostname = 'api.bochaai.com';
+    diagnostics.push(`Testing connectivity to: ${hostname}`);
+    
+    // DNS Test
+    try {
+      const dns = await import('dns/promises');
+      const addresses = await dns.resolve(hostname);
+      diagnostics.push(`DNS OK: ${addresses.join(', ')}`);
+    } catch (dnsErr: any) {
+      diagnostics.push(`DNS FAILED: ${dnsErr.message}`);
+    }
+
     const axiosConfig: any = { 
       headers: { 'Authorization': `Bearer ${bocha_api_key}`, 'Content-Type': 'application/json' },
       timeout: 20000,
@@ -626,10 +670,13 @@ app.post('/api/test/search', async (req, res) => {
     };
 
     if (http_proxy) {
+      diagnostics.push(`Using proxy: ${http_proxy}`);
       const agent = getProxyAgent(http_proxy);
       axiosConfig.httpsAgent = agent;
       axiosConfig.httpAgent = agent;
       axiosConfig.proxy = false;
+    } else {
+      diagnostics.push('No proxy configured in app settings.');
     }
 
     const response = await axios.post(
@@ -638,13 +685,13 @@ app.post('/api/test/search', async (req, res) => {
       axiosConfig
     );
     if (response.data?.code === 200 || response.data?.data) {
-      res.json({ success: true, message: '检索服务连接成功！' });
+      res.json({ success: true, message: '检索服务连接成功！', diagnostics });
     } else {
-      res.status(400).json({ error: `检索服务连接失败: ${JSON.stringify(response.data)}` });
+      res.status(400).json({ error: `检索服务连接失败: ${JSON.stringify(response.data)}`, diagnostics });
     }
   } catch (e: any) {
     logger.error(`Search Test Error: ${e.message}`);
-    res.status(400).json({ error: `检索服务连接失败: ${e.message}` });
+    res.status(400).json({ error: `检索服务连接失败: ${e.message}`, diagnostics });
   }
 });
 
@@ -683,6 +730,17 @@ app.post('/api/test/push', async (req, res) => {
     res.json({ success: true, message: successMsg });
   } else {
     res.status(400).json({ error: '未配置任何推送服务' });
+  }
+});
+
+app.post('/api/system/reset', authenticateToken, requireAdmin, (req, res) => {
+  try {
+    db.prepare('DELETE FROM settings').run();
+    db.prepare('DELETE FROM users').run();
+    logger.info('System reset by admin.');
+    res.json({ success: true, message: '系统已重置，请刷新页面重新配置。' });
+  } catch (e: any) {
+    res.status(500).json({ error: `重置失败: ${e.message}` });
   }
 });
 

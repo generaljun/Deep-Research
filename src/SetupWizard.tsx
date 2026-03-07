@@ -24,6 +24,7 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
     search: 'idle',
     push: 'idle'
   });
+  const [diagnostics, setDiagnostics] = useState<string[]>([]);
 
   const handleChange = (key: string, value: string) => {
     setSettings(prev => ({ ...prev, [key]: value }));
@@ -32,6 +33,7 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
   const testConnection = async (type: 'llm' | 'search' | 'push') => {
     setTestStatus(prev => ({ ...prev, [type]: 'loading' }));
     setError('');
+    setDiagnostics([]);
     try {
       const res = await fetch(`/api/test/${type}`, {
         method: 'POST',
@@ -41,9 +43,11 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
       const data = await res.json();
       if (res.ok) {
         setTestStatus(prev => ({ ...prev, [type]: 'success' }));
+        if (data.diagnostics) setDiagnostics(data.diagnostics);
       } else {
         setTestStatus(prev => ({ ...prev, [type]: 'error' }));
         setError(data.error || '测试失败');
+        if (data.diagnostics) setDiagnostics(data.diagnostics);
       }
     } catch (err: any) {
       setTestStatus(prev => ({ ...prev, [type]: 'error' }));
@@ -115,9 +119,22 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
         {/* Content */}
         <div className="p-8">
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl mb-6 flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">{error}</span>
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl mb-6">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                <span className="text-sm font-bold">{error}</span>
+              </div>
+              {diagnostics.length > 0 && (
+                <div className="mt-2 p-3 bg-red-100/50 dark:bg-red-900/40 rounded-lg text-xs font-mono space-y-1">
+                  <p className="opacity-70 mb-1 border-b border-red-200 dark:border-red-800 pb-1">诊断信息 (Diagnostics):</p>
+                  {diagnostics.map((d, i) => (
+                    <div key={i} className="flex gap-2">
+                      <span className="opacity-40">[{i+1}]</span>
+                      <span>{d}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -167,6 +184,11 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                     <input type="text" value={settings.model_writer} onChange={e => handleChange('model_writer', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">网络代理 (可选)</label>
+                  <input type="text" value={settings.http_proxy} onChange={e => handleChange('http_proxy', e.target.value)} placeholder="http://192.168.10.12:7890" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <p className="text-xs text-slate-500 mt-1">如果您的 NAS 无法直连 API，请在此输入代理地址。透明代理用户可留空。</p>
+                </div>
                 <button 
                   onClick={() => testConnection('llm')}
                   disabled={testStatus.llm === 'loading' || !settings.aliyun_api_key}
@@ -190,6 +212,11 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">博查 API Key</label>
                   <input type="password" value={settings.bocha_api_key} onChange={e => handleChange('bocha_api_key', e.target.value)} placeholder="sk-..." className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">网络代理 (可选)</label>
+                  <input type="text" value={settings.http_proxy} onChange={e => handleChange('http_proxy', e.target.value)} placeholder="http://192.168.10.12:7890" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <p className="text-xs text-slate-500 mt-1">如果您的 NAS 无法直连博查 API，请在此输入代理地址。</p>
                 </div>
                 <button 
                   onClick={() => testConnection('search')}

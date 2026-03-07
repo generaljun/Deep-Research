@@ -953,6 +953,14 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [testStatus, setTestStatus] = useState<Record<string, { loading: boolean, result: string | null, error: string | null }>>({});
+  const [resetStep, setResetStep] = useState(0); // 0: idle, 1: first confirm, 2: second confirm
+  const [confirmState, setConfirmState] = useState<{ type: string, id?: string } | null>(null);
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   useEffect(() => {
     fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -978,7 +986,6 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
   };
 
   const handleUpdate = async () => {
-    if (!confirm('确定要尝试自动更新吗？这会执行 git pull。')) return;
     setUpdating(true);
     try {
       const res = await fetch('/api/system/update', { 
@@ -987,14 +994,44 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
       });
       const data = await res.json();
       if (res.ok) {
-        alert(`✅ ${data.message}`);
+        showToast(data.message, 'success');
       } else {
-        alert(`❌ ${data.error}`);
+        showToast(data.error, 'error');
       }
     } catch (e) {
-      alert('更新请求失败');
+      showToast('更新请求失败', 'error');
     } finally {
       setUpdating(false);
+      setConfirmState(null);
+    }
+  };
+
+  const handleReset = async () => {
+    if (resetStep < 2) {
+      setResetStep(prev => prev + 1);
+      return;
+    }
+    
+    try {
+      const res = await fetch('/api/system/reset', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setResetStep(0);
+        showToast('系统已重置，即将重新开始配置', 'success');
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        showToast(`重置失败: ${data.error}`, 'error');
+        setResetStep(0);
+      }
+    } catch (e) {
+      showToast('重置请求失败', 'error');
+      setResetStep(0);
     }
   };
 
@@ -1011,13 +1048,15 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
   };
 
   const handleClearLogs = async () => {
-    if (!confirm('确定要清除所有日志吗？')) return;
     try {
       const res = await fetch('/api/logs', {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (res.ok) fetchLogs();
+      if (res.ok) {
+        fetchLogs();
+        setConfirmState(null);
+      }
     } catch (e) {
       alert('清除失败');
     }
@@ -1065,16 +1104,16 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
         },
         body: JSON.stringify(settings)
       });
-      alert('配置已安全写入 SQLite 数据库！');
+      showToast('配置已安全写入 SQLite 数据库！', 'success');
     } catch (e) {
-      alert('保存失败，请检查后端状态。');
+      showToast('保存失败，请检查后端状态。', 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const handleAddUser = async () => {
-    if (!newUsername || !newPassword) return alert('请输入用户名和密码');
+    if (!newUsername || !newPassword) return showToast('请输入用户名和密码', 'info');
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
@@ -1089,17 +1128,17 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
         setNewPassword('');
         setNewQuota(3);
         fetchUsers();
+        showToast('用户创建成功', 'success');
       } else {
         const data = await res.json();
-        alert(data.error || '添加失败');
+        showToast(data.error || '添加失败', 'error');
       }
     } catch (e) {
-      alert('请求失败');
+      showToast('请求失败', 'error');
     }
   };
 
   const handleDeleteUser = async (id: string) => {
-    if (!confirm('确定要删除此用户吗？')) return;
     try {
       const res = await fetch(`/api/users/${id}`, {
         method: 'DELETE',
@@ -1107,12 +1146,13 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
       });
       if (res.ok) {
         fetchUsers();
+        setConfirmState(null);
       } else {
         const data = await res.json();
-        alert(data.error || '删除失败');
+        showToast(data.error || '删除失败', 'error');
       }
     } catch (e) {
-      alert('请求失败');
+      showToast('请求失败', 'error');
     }
   };
 
@@ -1127,9 +1167,9 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
         body: JSON.stringify({ quota })
       });
       if (res.ok) fetchUsers();
-      else alert('更新额度失败');
+      else showToast('更新额度失败', 'error');
     } catch (e) {
-      alert('请求失败');
+      showToast('请求失败', 'error');
     }
   };
 
@@ -1190,6 +1230,20 @@ const handleSearchChange = (searchName: string) => {
           </div>
         </div>
         
+        {/* Toast Notification */}
+        {toast && (
+          <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 border ${
+            toast.type === 'success' ? 'bg-emerald-500 text-white border-emerald-400' : 
+            toast.type === 'error' ? 'bg-red-500 text-white border-red-400' : 
+            'bg-blue-500 text-white border-blue-400'
+          }`}>
+            {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : 
+             toast.type === 'error' ? <AlertCircle className="w-5 h-5" /> : 
+             <Info className="w-5 h-5" />}
+            <span className="font-bold text-sm">{toast.message}</span>
+          </div>
+        )}
+
         {activeAdminTab === 'settings' ? (
         <div className="space-y-8 relative z-10">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -1380,7 +1434,15 @@ const handleSearchChange = (searchName: string) => {
                         </td>
                         <td className="px-4 py-3 text-blue-400 dark:text-slate-500 dark:text-cyan-500/70">{new Date(u.created_at).toLocaleString()}</td>
                         <td className="px-4 py-3 text-right">
-                          <button onClick={() => handleDeleteUser(u.id)} className="text-red-500 dark:text-red-400 hover:text-red-300 text-xs">删除</button>
+                          {confirmState?.type === 'deleteUser' && confirmState.id === u.id ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => handleDeleteUser(u.id)} className="text-red-500 font-bold text-xs">确定</button>
+                              <span className="text-slate-400">/</span>
+                              <button onClick={() => setConfirmState(null)} className="text-slate-400 text-xs">取消</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setConfirmState({ type: 'deleteUser', id: u.id })} className="text-red-500 dark:text-red-400 hover:text-red-300 text-xs">删除</button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1408,9 +1470,17 @@ const handleSearchChange = (searchName: string) => {
               <div className="text-sm text-slate-600 dark:text-cyan-300">
                 本地日志文件 (最多保留10个)
               </div>
-              <button onClick={handleClearLogs} className="bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-800/50 text-red-500 dark:text-red-400 px-4 py-2 rounded-lg text-sm border border-red-300 dark:border-red-800/50 transition-colors">
-                清除所有日志
-              </button>
+              {confirmState?.type === 'clearLogs' ? (
+                <div className="flex items-center gap-2 bg-red-50 dark:bg-red-900/20 p-1 rounded-lg border border-red-200 dark:border-red-800">
+                  <span className="text-xs font-bold text-red-800 dark:text-red-400 px-2">确认清空？</span>
+                  <button onClick={handleClearLogs} className="px-3 py-1 bg-red-600 text-white rounded-md text-xs">确定</button>
+                  <button onClick={() => setConfirmState(null)} className="px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-md text-xs">取消</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmState({ type: 'clearLogs' })} className="bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-800/50 text-red-500 dark:text-red-400 px-4 py-2 rounded-lg text-sm border border-red-300 dark:border-red-800/50 transition-colors">
+                  清除所有日志
+                </button>
+              )}
             </div>
             
             <div className="grid grid-cols-1 gap-4">
@@ -1476,14 +1546,22 @@ const handleSearchChange = (searchName: string) => {
                       <p className="text-sm text-blue-700 dark:text-cyan-300 mb-4">
                         检测到 GitHub 仓库有更新。您可以尝试点击下方按钮同步代码。
                       </p>
-                      <div className="flex flex-wrap gap-3">
-                        <button 
-                          onClick={handleUpdate}
-                          disabled={updating}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-cyan-600 dark:hover:bg-cyan-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
-                        >
-                          {updating ? '正在同步...' : '同步最新代码'}
-                        </button>
+              <div className="flex flex-wrap gap-3">
+                        {confirmState?.type === 'update' ? (
+                          <div className="flex items-center gap-2 bg-blue-100 dark:bg-cyan-900/50 p-1 rounded-lg border border-blue-200 dark:border-cyan-800">
+                            <span className="text-xs font-bold text-blue-800 dark:text-cyan-200 px-2">确认更新？</span>
+                            <button onClick={handleUpdate} className="px-3 py-1 bg-blue-600 text-white rounded-md text-xs">确定</button>
+                            <button onClick={() => setConfirmState(null)} className="px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-md text-xs">取消</button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => setConfirmState({ type: 'update' })}
+                            disabled={updating}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-cyan-600 dark:hover:bg-cyan-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
+                          >
+                            {updating ? '正在同步...' : '同步最新代码'}
+                          </button>
+                        )}
                         <a 
                           href={versionInfo.repoUrl} 
                           target="_blank" 
@@ -1537,6 +1615,58 @@ const handleSearchChange = (searchName: string) => {
                   <span>建议在每次大版本更新后都执行上述命令以确保系统稳定性。</span>
                 </li>
               </ul>
+            </div>
+
+            <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/50 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-red-800 dark:text-red-400 mb-4 flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                危险区域 (Danger Zone)
+              </h3>
+              <p className="text-sm text-red-700 dark:text-red-300/70 mb-6">
+                重置系统将永久删除所有 API 密钥、数据库配置和用户账号。执行后您需要重新走一遍初始化向导。
+              </p>
+              
+              <div className="flex flex-col gap-4">
+                {resetStep > 0 && (
+                  <div className="bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 p-5 rounded-2xl mb-2 animate-in zoom-in-95 duration-300">
+                    <div className="flex items-start gap-3 mb-3">
+                      <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-black text-red-900 dark:text-red-100">
+                          {resetStep === 1 ? '您确定要执行重置吗？' : '这是最后一次警告！'}
+                        </p>
+                        <p className="text-xs text-red-700 dark:text-red-300/70 mt-1">
+                          此操作将永久删除：所有 API 密钥、所有用户账号、所有系统设置。
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={handleReset}
+                        className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-all shadow-md"
+                      >
+                        {resetStep === 1 ? '是的，我确定' : '立即重置 (点此执行)'}
+                      </button>
+                      <button 
+                        onClick={() => setResetStep(0)}
+                        className="flex-1 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition-all"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                {resetStep === 0 && (
+                  <button 
+                    onClick={() => setResetStep(1)}
+                    className="px-6 py-4 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-red-500/20 flex items-center justify-center gap-2 group"
+                  >
+                    <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+                    重置系统并重新配置
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
