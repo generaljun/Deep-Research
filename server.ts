@@ -595,10 +595,23 @@ app.post('/api/test/llm', async (req, res) => {
     // DNS Test
     try {
       const dns = await import('dns/promises');
-      const addresses = await dns.resolve(url.hostname);
-      diagnostics.push(`DNS OK: ${addresses.join(', ')}`);
+      const lookup = await dns.lookup(url.hostname);
+      diagnostics.push(`DNS OK: Resolved to ${lookup.address}`);
     } catch (dnsErr: any) {
       diagnostics.push(`DNS FAILED: ${dnsErr.message}`);
+      
+      // 增加 IP 连通性测试
+      diagnostics.push(`正在尝试 IP 直连测试...`);
+      try {
+        const { execSync } = await import('child_process');
+        // 测试阿里 DNS IP
+        execSync('ping -c 1 -W 2 223.5.5.5');
+        diagnostics.push(`IP TEST OK: 成功连接到公共 DNS (223.5.5.5)，说明仅 DNS 解析失效。`);
+      } catch (pingErr) {
+        diagnostics.push(`IP TEST FAILED: 无法连接到外网 IP (223.5.5.5)，说明容器完全断网。`);
+      }
+      
+      diagnostics.push(`建议: 请在 docker-compose 中设置 network_mode: "host" 或手动指定 dns: [223.5.5.5]`);
     }
 
     const options: any = { 

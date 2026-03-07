@@ -1,22 +1,28 @@
-FROM node:22-alpine
+# 使用轻量级 Node.js 镜像
+FROM node:20-slim
 
-# Install su-exec for privilege dropping, git for updates, and build tools for native modules
-RUN apk add --no-cache su-exec git python3 make g++
+# 安装 SQLite 运行所需的依赖
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# 复制 package.json 并安装依赖
 COPY package*.json ./
 RUN npm install
 
+# 复制所有源代码
 COPY . .
+
+# 编译前端
 RUN npm run build
 
-# Copy entrypoint script and make it executable
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
+# 暴露端口 (Host 模式下此指令仅作声明)
 EXPOSE 3000
 
-# Use the entrypoint script to handle PUID/PGID
-ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["npx", "tsx", "server.ts"]
+# 启动命令
+CMD ["npm", "start"]
