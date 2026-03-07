@@ -952,6 +952,7 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
   const [versionInfo, setVersionInfo] = useState<{ currentVersion: string, remoteVersion: string, hasUpdate: boolean, repoUrl: string } | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [testStatus, setTestStatus] = useState<Record<string, { loading: boolean, result: string | null, error: string | null }>>({});
 
   useEffect(() => {
     fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -1023,6 +1024,7 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
   };
 
   const testConnection = async (type: 'llm' | 'search' | 'push') => {
+    setTestStatus(prev => ({ ...prev, [type]: { loading: true, result: null, error: null } }));
     try {
       const res = await fetch(`/api/test/${type}`, {
         method: 'POST',
@@ -1034,13 +1036,22 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
       });
       const data = await res.json();
       if (res.ok) {
-        alert(`✅ 测试成功: ${data.message}`);
+        setTestStatus(prev => ({ ...prev, [type]: { loading: false, result: data.message, error: null } }));
       } else {
-        alert(`❌ 测试失败: ${data.error}\n\n请检查配置是否正确。`);
+        setTestStatus(prev => ({ ...prev, [type]: { loading: false, result: null, error: data.error } }));
       }
     } catch (e: any) {
-      alert(`❌ 请求失败: ${e.message}`);
+      setTestStatus(prev => ({ ...prev, [type]: { loading: false, result: null, error: e.message } }));
     }
+  };
+
+  const TestResult = ({ type }: { type: string }) => {
+    const status = testStatus[type];
+    if (!status) return null;
+    if (status.loading) return <span className="text-xs text-blue-500 animate-pulse flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> 测试中...</span>;
+    if (status.result) return <span className="text-xs text-emerald-500 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> {status.result}</span>;
+    if (status.error) return <span className="text-xs text-red-500 flex items-center gap-1" title={status.error}><AlertCircle className="w-3 h-3" /> 测试失败</span>;
+    return null;
   };
 
   const handleSave = async () => {
@@ -1188,7 +1199,10 @@ const handleSearchChange = (searchName: string) => {
                 <h3 className="text-sm font-bold text-slate-600 dark:text-cyan-300 flex items-center gap-2">
                   <Key className="w-4 h-4" /> 大模型配置 (OpenAI 兼容)
                 </h3>
-                <button onClick={() => testConnection('llm')} className="text-xs bg-blue-100/30 dark:bg-cyan-900/30 hover:bg-blue-200/50 dark:bg-cyan-800/50 text-blue-500 dark:text-cyan-400 px-3 py-1 rounded border border-slate-200 dark:border-cyan-800/50 transition-colors">测试连接</button>
+                <div className="flex items-center gap-3">
+                  <TestResult type="llm" />
+                  <button onClick={() => testConnection('llm')} disabled={testStatus.llm?.loading} className="text-xs bg-blue-100/30 dark:bg-cyan-900/30 hover:bg-blue-200/50 dark:bg-cyan-800/50 text-blue-500 dark:text-cyan-400 px-3 py-1 rounded border border-slate-200 dark:border-cyan-800/50 transition-colors disabled:opacity-50">测试连接</button>
+                </div>
               </div>
               <div className="space-y-4">
                 <div>
@@ -1236,7 +1250,10 @@ const handleSearchChange = (searchName: string) => {
                 <h3 className="text-sm font-bold text-slate-600 dark:text-cyan-300 flex items-center gap-2">
                   <Server className="w-4 h-4" /> 检索服务配置
                 </h3>
-                <button onClick={() => testConnection('search')} className="text-xs bg-blue-100/30 dark:bg-cyan-900/30 hover:bg-blue-200/50 dark:bg-cyan-800/50 text-blue-500 dark:text-cyan-400 px-3 py-1 rounded border border-slate-200 dark:border-cyan-800/50 transition-colors">测试连接</button>
+                <div className="flex items-center gap-3">
+                  <TestResult type="search" />
+                  <button onClick={() => testConnection('search')} disabled={testStatus.search?.loading} className="text-xs bg-blue-100/30 dark:bg-cyan-900/30 hover:bg-blue-200/50 dark:bg-cyan-800/50 text-blue-500 dark:text-cyan-400 px-3 py-1 rounded border border-slate-200 dark:border-cyan-800/50 transition-colors disabled:opacity-50">测试连接</button>
+                </div>
               </div>
               <div>
                 <TooltipLabel 
@@ -1270,7 +1287,10 @@ const handleSearchChange = (searchName: string) => {
                 <h3 className="text-sm font-bold text-slate-600 dark:text-cyan-300 flex items-center gap-2">
                   <MessageSquare className="w-4 h-4" /> 消息推送配置 (可选)
                 </h3>
-                <button onClick={() => testConnection('push')} className="text-xs bg-blue-100/30 dark:bg-cyan-900/30 hover:bg-blue-200/50 dark:bg-cyan-800/50 text-blue-500 dark:text-cyan-400 px-3 py-1 rounded border border-slate-200 dark:border-cyan-800/50 transition-colors">测试连接</button>
+                <div className="flex items-center gap-3">
+                  <TestResult type="push" />
+                  <button onClick={() => testConnection('push')} disabled={testStatus.push?.loading} className="text-xs bg-blue-100/30 dark:bg-cyan-900/30 hover:bg-blue-200/50 dark:bg-cyan-800/50 text-blue-500 dark:text-cyan-400 px-3 py-1 rounded border border-slate-200 dark:border-cyan-800/50 transition-colors disabled:opacity-50">测试连接</button>
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
