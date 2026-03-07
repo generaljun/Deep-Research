@@ -1,7 +1,7 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
-# Install su-exec for privilege dropping (fnOS PUID/PGID support)
-RUN apk add --no-cache su-exec
+# Install su-exec for privilege dropping and build tools for native modules (better-sqlite3)
+RUN apk add --no-cache su-exec python3 make g++
 
 WORKDIR /app
 

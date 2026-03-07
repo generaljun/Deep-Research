@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle } from 'lucide-react';
+import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info } from 'lucide-react';
 import SetupWizard from './SetupWizard';
 import AnimationDemo from './AnimationDemo';
 
@@ -941,7 +941,7 @@ const TooltipLabel = ({ label, title, desc }: { label: string, title: string, de
 );
 
 function AdminView({ token, settings, handleChange, setSettings }: { token: string, settings: Record<string, string>, handleChange: (key: string, value: string) => void, setSettings: React.Dispatch<React.SetStateAction<Record<string, string>>> }) {
-  const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'logs'>('settings');
+  const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'logs' | 'system'>('settings');
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [newUsername, setNewUsername] = useState('');
@@ -949,6 +949,9 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
   const [newRole, setNewRole] = useState('user');
   const [newQuota, setNewQuota] = useState(3);
   const [logs, setLogs] = useState<any[]>([]);
+  const [versionInfo, setVersionInfo] = useState<{ currentVersion: string, remoteVersion: string, hasUpdate: boolean, repoUrl: string } | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -957,7 +960,42 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
       
     fetchUsers();
     fetchLogs();
+    checkUpdate();
   }, [token]);
+
+  const checkUpdate = async () => {
+    setCheckingUpdate(true);
+    try {
+      const res = await fetch('/api/system/check-update', { headers: { 'Authorization': `Bearer ${token}` } });
+      const data = await res.json();
+      if (res.ok) setVersionInfo(data);
+    } catch (e) {
+      console.error('Check update failed:', e);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!confirm('确定要尝试自动更新吗？这会执行 git pull。')) return;
+    setUpdating(true);
+    try {
+      const res = await fetch('/api/system/update', { 
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` } 
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ ${data.message}`);
+      } else {
+        alert(`❌ ${data.error}`);
+      }
+    } catch (e) {
+      alert('更新请求失败');
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const fetchUsers = () => {
     fetch('/api/users', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -1129,6 +1167,15 @@ const handleSearchChange = (searchName: string) => {
             >
               运行日志
             </button>
+            <button 
+              onClick={() => setActiveAdminTab('system')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors relative ${activeAdminTab === 'system' ? 'bg-blue-100/50 dark:bg-cyan-900/50 text-slate-600 dark:text-cyan-300' : 'text-blue-600 dark:text-cyan-600 hover:text-blue-500 dark:text-cyan-400'}`}
+            >
+              系统状态
+              {versionInfo?.hasUpdate && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-[#0a0a0a]"></span>
+              )}
+            </button>
           </div>
         </div>
         
@@ -1155,21 +1202,13 @@ const handleSearchChange = (searchName: string) => {
                   <input type="password" placeholder="sk-xxxxx" value={settings.aliyun_api_key} onChange={e => handleChange('aliyun_api_key', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
                 </div>
                 <div>
-                  <TooltipLabel label="Base URL" title="Base URL" desc="大模型 API 地址" />
-                  <input type="text" value={settings.llm_base_url} onChange={e => handleChange('llm_base_url', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
+                  <TooltipLabel 
+                    label="Base URL" 
+                    title="API 接口地址" 
+                    desc="大模型服务的请求地址。阿里云百炼默认为 https://dashscope.aliyuncs.com/compatible-mode/v1。如果是 OpenAI 或其他中转站，请填写对应的地址。" 
+                  />
+                  <input type="text" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" value={settings.llm_base_url} onChange={e => handleChange('llm_base_url', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
                 </div>
-                <div>
-                  <TooltipLabel label="模型名称" title="模型名称" desc="使用的模型 ID" />
-                  <input type="text" value={settings.model_planner} onChange={e => handleChange('model_planner', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
-                </div>
-              </div>
-              <div>
-                <TooltipLabel 
-                  label="Base URL" 
-                  title="API 接口地址" 
-                  desc="大模型服务的请求地址。阿里云百炼默认为 https://dashscope.aliyuncs.com/compatible-mode/v1。如果是 OpenAI 或其他中转站，请填写对应的地址。" 
-                />
-                <input type="text" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" value={settings.llm_base_url} onChange={e => handleChange('llm_base_url', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1343,7 +1382,7 @@ const handleSearchChange = (searchName: string) => {
             </div>
           </button>
         </div>
-        ) : (
+        ) : activeAdminTab === 'logs' ? (
           <div className="space-y-6 relative z-10">
             <div className="flex justify-between items-center bg-slate-50/50 dark:bg-[#030712]/50 p-4 rounded-xl border border-slate-100 dark:border-cyan-900/30">
               <div className="text-sm text-slate-600 dark:text-cyan-300">
@@ -1381,6 +1420,103 @@ const handleSearchChange = (searchName: string) => {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-8 relative z-10">
+            <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-cyan-100 mb-6 flex items-center gap-2">
+                <Shield className="w-5 h-5 text-blue-500 dark:text-cyan-400" />
+                系统版本与更新
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-cyan-950/20 border border-slate-100 dark:border-cyan-900/30">
+                  <div className="text-sm text-slate-500 dark:text-cyan-500 mb-1">当前版本</div>
+                  <div className="text-2xl font-bold text-slate-800 dark:text-cyan-100 font-mono">
+                    v{versionInfo?.currentVersion || '加载中...'}
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-cyan-950/20 border border-slate-100 dark:border-cyan-900/30">
+                  <div className="text-sm text-slate-500 dark:text-cyan-500 mb-1">远程最新版本</div>
+                  <div className="text-2xl font-bold text-slate-800 dark:text-cyan-100 font-mono">
+                    v{versionInfo?.remoteVersion || '加载中...'}
+                  </div>
+                </div>
+              </div>
+
+              {versionInfo?.hasUpdate ? (
+                <div className="p-6 rounded-xl bg-blue-50 dark:bg-cyan-900/20 border border-blue-100 dark:border-cyan-800/30">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-blue-100 dark:bg-cyan-800/50 rounded-lg">
+                      <Download className="w-5 h-5 text-blue-600 dark:text-cyan-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-blue-900 dark:text-cyan-100 mb-1">发现新版本！</h4>
+                      <p className="text-sm text-blue-700 dark:text-cyan-300 mb-4">
+                        检测到 GitHub 仓库有更新。您可以尝试点击下方按钮同步代码。
+                      </p>
+                      <div className="flex flex-wrap gap-3">
+                        <button 
+                          onClick={handleUpdate}
+                          disabled={updating}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-cyan-600 dark:hover:bg-cyan-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
+                        >
+                          {updating ? '正在同步...' : '同步最新代码'}
+                        </button>
+                        <a 
+                          href={versionInfo.repoUrl} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="px-4 py-2 bg-white dark:bg-transparent border border-blue-200 dark:border-cyan-800 text-blue-600 dark:text-cyan-400 rounded-lg text-sm font-medium hover:bg-blue-50 dark:hover:bg-cyan-900/30 transition-colors"
+                        >
+                          查看更新日志
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mb-4">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-500 dark:text-emerald-400" />
+                  </div>
+                  <h4 className="text-lg font-medium text-slate-800 dark:text-cyan-100 mb-1">您的系统已是最新版本</h4>
+                  <p className="text-sm text-slate-500 dark:text-cyan-500 mb-6">当前运行版本：v{versionInfo?.currentVersion}</p>
+                  <button 
+                    onClick={checkUpdate}
+                    disabled={checkingUpdate}
+                    className="px-4 py-2 bg-slate-100 dark:bg-cyan-900/30 hover:bg-slate-200 dark:hover:bg-cyan-800/50 text-slate-600 dark:text-cyan-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${checkingUpdate ? 'animate-spin' : ''}`} />
+                    {checkingUpdate ? '正在检查...' : '立即检查更新'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-cyan-100 mb-4 flex items-center gap-2">
+                <Info className="w-5 h-5 text-slate-400 dark:text-cyan-600" />
+                更新说明
+              </h3>
+              <ul className="space-y-3 text-sm text-slate-600 dark:text-cyan-400">
+                <li className="flex gap-2">
+                  <span className="text-blue-500 dark:text-cyan-500">•</span>
+                  <span>由于您使用的是 Docker 部署，Web 端的“同步代码”仅能拉取最新的源码文件。</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-blue-500 dark:text-cyan-500">•</span>
+                  <span>如果更新涉及依赖变更（package.json）或 Dockerfile 变更，您必须在 NAS 终端手动执行：</span>
+                </li>
+                <div className="bg-slate-900 text-slate-300 p-3 rounded-lg font-mono text-xs my-2">
+                  git pull && docker compose up -d --build
+                </div>
+                <li className="flex gap-2">
+                  <span className="text-blue-500 dark:text-cyan-500">•</span>
+                  <span>建议在每次大版本更新后都执行上述命令以确保系统稳定性。</span>
+                </li>
+              </ul>
             </div>
           </div>
         )}

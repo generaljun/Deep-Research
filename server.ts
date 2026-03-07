@@ -12,6 +12,10 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -455,6 +459,61 @@ ${searchResults}`;
 // ==========================================
 // 6. API Routes
 // ==========================================
+
+// System Version & Update API
+const GITHUB_REPO = 'generaljun/Deep-Research';
+
+app.get('/api/system/version', (req, res) => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+  res.json({ version: pkg.version });
+});
+
+app.get('/api/system/check-update', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+    const currentVersion = pkg.version;
+    
+    const response = await axios.get(`https://api.github.com/repos/${GITHUB_REPO}/contents/package.json`, {
+      headers: { 'Accept': 'application/vnd.github.v3.raw' }
+    });
+    
+    const remoteVersion = response.data.version;
+    const hasUpdate = remoteVersion !== currentVersion;
+    
+    res.json({
+      currentVersion,
+      remoteVersion,
+      hasUpdate,
+      repoUrl: `https://github.com/generaljun/Deep-Research`
+    });
+  } catch (e: any) {
+    logger.error(`Check update failed: ${e.message}`);
+    res.status(500).json({ error: '检查更新失败，请稍后重试。' });
+  }
+});
+
+app.post('/api/system/update', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    logger.info('User triggered system update via Web UI.');
+    
+    // Check if .git exists to see if we can pull
+    if (!fs.existsSync(path.join(__dirname, '.git'))) {
+      return res.status(400).json({ 
+        error: '当前环境不是 Git 仓库，无法自动更新。请手动执行：git pull && docker compose up -d --build' 
+      });
+    }
+
+    // Try git pull
+    const { stdout, stderr } = await execAsync('git pull');
+    logger.info(`Git pull output: ${stdout}`);
+    if (stderr) logger.warn(`Git pull stderr: ${stderr}`);
+
+    res.json({ success: true, message: '代码已同步。由于您使用的是 Docker 部署，请在 NAS 终端执行 docker compose up -d --build 以完成最终更新。' });
+  } catch (e: any) {
+    logger.error(`Update failed: ${e.message}`);
+    res.status(500).json({ error: `更新失败: ${e.message}` });
+  }
+});
 
 // Setup Wizard API
 app.get('/api/system/status', (req, res) => {
