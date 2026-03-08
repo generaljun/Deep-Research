@@ -59,10 +59,20 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
       if (res.ok) {
         setTestStatus(prev => ({ ...prev, [type]: 'success' }));
         if (data.diagnostics) setDiagnostics(data.diagnostics);
+        if (type === 'push') {
+          if (data.partial) {
+            alert(`推送测试部分成功：\n✅ 成功：${data.message}\n❌ 失败：${data.error}\n\n注意：失败的机器人将无法收到推送，但您可以继续初始化并启动系统，待后续在管理后台补充配置后，依然能保持机器人工作。`);
+          } else if (data.message) {
+            alert(`推送测试全部成功：\n${data.message}`);
+          }
+        }
       } else {
         setTestStatus(prev => ({ ...prev, [type]: 'error' }));
         setError(data.error || '测试失败');
         if (data.diagnostics) setDiagnostics(data.diagnostics);
+        if (type === 'push') {
+          alert(`推送测试失败：\n${data.error}\n\n注意：当前没有配置推送机器人或配置失败，报告仅支持本地读取。您可以继续初始化并启动系统，待后续在管理后台补充配置后，依然能保持机器人工作。`);
+        }
       }
     } catch (err: any) {
       setTestStatus(prev => ({ ...prev, [type]: 'error' }));
@@ -280,7 +290,7 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
               <div className="text-center mb-8">
                 <MessageSquare className="w-12 h-12 text-blue-500 mx-auto mb-4" />
                 <h2 className="text-xl font-bold text-slate-800 dark:text-cyan-50">第四步：网络与触达 (可选)</h2>
-                <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">配置 Telegram 代理及消息推送服务。</p>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">配置 Telegram 代理及飞书等消息推送服务。</p>
               </div>
               <div className="space-y-4">
                 <div>

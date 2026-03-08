@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info } from 'lucide-react';
+import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info, Trash2 } from 'lucide-react';
 import SetupWizard from './SetupWizard';
 import AnimationDemo from './AnimationDemo';
 
@@ -350,7 +350,7 @@ export default function App() {
               <GeneratorView token={token} user={user} onLogout={handleLogout} isActive={activeTab === 'generator'} />
             </div>
             <div className={activeTab === 'reports' ? 'block' : 'hidden'}>
-              <ReportsView token={token} onLogout={handleLogout} isActive={activeTab === 'reports'} />
+              <ReportsView token={token} user={user} onLogout={handleLogout} isActive={activeTab === 'reports'} />
             </div>
             {user?.role === 'admin' && (
               <div className={activeTab === 'admin' ? 'block' : 'hidden'}>
@@ -364,9 +364,10 @@ export default function App() {
   );
 }
 
-function ReportsView({ token, onLogout, isActive }: { token: string, onLogout: () => void, isActive: boolean }) {
+function ReportsView({ token, user, onLogout, isActive }: { token: string, user: any, onLogout: () => void, isActive: boolean }) {
   const [reports, setReports] = useState<{filename: string, size: number, createdAt: string}[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const handleDownload = async (filename: string) => {
     try {
@@ -390,6 +391,25 @@ function ReportsView({ token, onLogout, isActive }: { token: string, onLogout: (
       document.body.removeChild(a);
     } catch (error) {
       console.error('Download error:', error);
+    }
+  };
+
+  const handleDelete = async (filename: string) => {
+    try {
+      const response = await fetch(`/api/reports/${filename}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.status === 401 || response.status === 403) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) throw new Error('Delete failed');
+      setReports(prev => prev.filter(r => r.filename !== filename));
+      setConfirmDelete(null);
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('删除失败，请重试');
     }
   };
 
@@ -447,13 +467,43 @@ function ReportsView({ token, onLogout, isActive }: { token: string, onLogout: (
                     </div>
                   </div>
                 </div>
-                <button 
-                  onClick={() => handleDownload(r.filename)}
-                  className="px-5 py-2.5 bg-blue-50/50 dark:bg-cyan-950/50 text-slate-600 dark:text-cyan-300 border border-slate-200 dark:border-cyan-800 rounded-xl text-sm font-bold hover:bg-blue-100 dark:bg-cyan-900 hover:border-blue-500 dark:hover:border-cyan-400 transition-all flex items-center gap-2 shrink-0"
-                >
-                  <Download className="w-4 h-4" />
-                  下载 Markdown
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button 
+                    onClick={() => handleDownload(r.filename)}
+                    className="px-5 py-2.5 bg-blue-50/50 dark:bg-cyan-950/50 text-slate-600 dark:text-cyan-300 border border-slate-200 dark:border-cyan-800 rounded-xl text-sm font-bold hover:bg-blue-100 dark:bg-cyan-900 hover:border-blue-500 dark:hover:border-cyan-400 transition-all flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    下载 Markdown
+                  </button>
+                  {user?.role === 'admin' && (
+                    confirmDelete === r.filename ? (
+                      <div className="flex items-center gap-2 bg-red-50/50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 rounded-xl px-3 py-1.5">
+                        <span className="text-xs text-red-600 dark:text-red-400 font-medium mr-2">确认删除?</span>
+                        <button 
+                          onClick={() => handleDelete(r.filename)}
+                          className="text-xs font-bold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors"
+                        >
+                          确认
+                        </button>
+                        <span className="text-slate-300 dark:text-slate-600">|</span>
+                        <button 
+                          onClick={() => setConfirmDelete(null)}
+                          className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => setConfirmDelete(r.filename)}
+                        className="p-2.5 bg-red-50/50 dark:bg-red-950/50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/80 transition-all flex items-center justify-center"
+                        title="删除报告"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -699,8 +749,9 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
                       type="text"
                       value={topic}
                       onChange={(e) => setTopic(e.target.value)}
+                      disabled={systemStatus.isBusy}
                       placeholder="例如：2026年氢动力无人机的最新进展"
-                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl pl-4 pr-12 py-4 text-slate-800 dark:text-cyan-50 placeholder:text-blue-800 dark:text-cyan-800 focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 focus:border-blue-500 dark:border-cyan-500 transition-all shadow-inner"
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl pl-4 pr-12 py-4 text-slate-800 dark:text-cyan-50 placeholder:text-blue-800 dark:text-cyan-800 focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 focus:border-blue-500 dark:border-cyan-500 transition-all shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 flex gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-cyan-500/40 animate-pulse"></span>
@@ -724,7 +775,8 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
                       <button
                         key={len}
                         onClick={() => setLength(len)}
-                        className={`relative overflow-hidden p-5 rounded-2xl border text-left transition-all duration-300 ${
+                        disabled={systemStatus.isBusy}
+                        className={`relative overflow-hidden p-5 rounded-2xl border text-left transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
                           length === len
                             ? 'bg-blue-50/40 dark:bg-cyan-950/40 border-blue-500 dark:border-cyan-500 shadow-md dark:shadow-[0_0_20px_rgba(6,182,212,0.15)]'
                             : 'bg-slate-50 dark:bg-[#030712] border-slate-100 dark:border-cyan-900/30 hover:border-blue-300 dark:hover:border-cyan-700/50 hover:bg-blue-50/20 dark:bg-cyan-950/20'
@@ -927,12 +979,13 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
             {status === 'idle' && (
               <button
                 onClick={handleStartReport}
-                className="w-full relative group overflow-hidden rounded-xl"
+                disabled={systemStatus.isBusy}
+                className="w-full relative group overflow-hidden rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 via-cyan-600 to-emerald-600 bg-[length:200%_auto] animate-gradient group-hover:bg-[length:100%_auto] transition-all duration-500"></div>
                 <div className="relative px-4 py-5 flex items-center justify-center gap-3 text-white font-bold tracking-wide text-lg">
                   <Play className="w-6 h-6 fill-current" />
-                  确认大纲，启动后台静默生成引擎
+                  {systemStatus.isBusy ? '系统繁忙，请排队等待' : '确认大纲，启动后台静默生成引擎'}
                 </div>
               </button>
             )}

@@ -460,6 +460,8 @@ let taskQueue: { id: string, topic: string, user: string }[] = [];
 
 const runDeepResearch = async (taskId: string, topic: string, length: string, user: string) => {
   runningTask = { id: taskId, topic, user, progress: 0, status: 'running' };
+  currentRunningTask = { taskId, username: user, topic };
+  broadcastSystemStatus();
   const reportsDir = path.join(__dirname, 'reports');
   if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
   
@@ -551,10 +553,13 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
         const writerPrompt = `你是一位顶级的行业资深撰稿人。请根据【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
 【行文要求】
 1. 深度剖析：不要只做数据的堆砌，必须对数据背后的商业逻辑、技术瓶颈进行深度推演。
-2. 格式要求：必须使用标准的 Markdown 格式排版（合理使用二级/三级标题、加粗、数据表格）。
+2. 格式要求：必须使用标准的 Markdown 格式排版。为了让报告输出可视化效果更好，请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格，并合理使用二级/三级标题、加粗、引用块等元素增强排版美感。
 3. 严禁废话：直接输出正文，绝对不要输出“好的”、“以下是为您撰写的内容”等废话。
 4. 严谨性：数据和事实必须严格依据【参考素材】，不得产生幻觉。
-5. 溯源要求：报告中主要结论和数据必须有出处注释（如：[来源：xxx]）。注释不计入总字数。
+5. 数据溯源标注：报告中引用的数据和结论，必须在句末使用小标（如：[^1]、[^2]）进行标注。
+6. 参考文献列表：必须在本章正文的最后，单独设立一个“### 本章参考数据源”小节，将正文中用到的小标对应的来源统一列出，格式必须包含标题和完整的URL，例如：
+   [^1]: [来源文章标题](URL)
+   让用户可以直接点击打开去深度挖掘。
 
 章节标题：${chapter.chapter_title}
 核心论点：${chapter.core_points}
@@ -621,6 +626,8 @@ ${searchResults}`;
     taskEvents.emit(`done-${taskId}`);
   } finally {
     runningTask = null;
+    currentRunningTask = null;
+    broadcastSystemStatus();
     if (taskQueue.length > 0) {
       const nextTask = taskQueue.shift()!;
       runDeepResearch(nextTask.id, nextTask.topic, '2000', nextTask.user);
@@ -669,21 +676,66 @@ app.post('/api/system/update', authenticateToken, requireAdmin, async (req, res)
     logger.info('User triggered system update via Web UI.');
     
     // Check if .git exists to see if we can pull
-    if (!fs.existsSync(path.join(__dirname, '.git'))) {
-      return res.status(400).json({ 
-        error: '当前环境不是 Git 仓库，无法自动更新。请手动执行：git pull && docker compose up -d --build' 
-      });
+    if (fs.existsSync(path.join(__dirname, '.git'))) {
+      // Try git pull
+      const { stdout, stderr } = await execAsync('git pull');
+      logger.info(`Git pull output: ${stdout}`);
+      if (stderr) logger.warn(`Git pull stderr: ${stderr}`);
+      
+      return res.json({ success: true, message: '代码已同步。如果您使用的是 Docker 部署，请在 NAS 终端执行 docker compose up -d --build 以完成最终更新。' });
     }
 
-    // Try git pull
-    const { stdout, stderr } = await execAsync('git pull');
-    logger.info(`Git pull output: ${stdout}`);
-    if (stderr) logger.warn(`Git pull stderr: ${stderr}`);
-
-    res.json({ success: true, message: '代码已同步。由于您使用的是 Docker 部署，请在 NAS 终端执行 docker compose up -d --build 以完成最终更新。' });
+    // Docker environment without .git
+    logger.info('Docker environment detected. Starting background update process...');
+    
+    const url = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.tar.gz`;
+    const updatePath = path.join(__dirname, 'update.tar.gz');
+    
+    // Send response immediately so the UI doesn't timeout
+    res.json({ success: true, message: '系统正在后台下载更新并编译，这可能需要几分钟时间。更新完成后系统会自动重启，请稍后刷新页面。' });
+    
+    // Run update process in background
+    setTimeout(async () => {
+      try {
+        logger.info(`Downloading update from ${url}...`);
+        const response = await axios({
+          method: 'GET',
+          url: url,
+          responseType: 'stream'
+        });
+        
+        const writer = fs.createWriteStream(updatePath);
+        response.data.pipe(writer);
+        
+        await new Promise((resolve, reject) => {
+          writer.on('finish', () => resolve(true));
+          writer.on('error', reject);
+        });
+        
+        logger.info('Download complete. Extracting...');
+        await execAsync(`tar -xzf ${updatePath} --strip-components=1 -C ${__dirname}`);
+        
+        logger.info('Extraction complete. Installing dependencies...');
+        await execAsync(`cd ${__dirname} && npm install`);
+        
+        logger.info('Dependencies installed. Building frontend...');
+        await execAsync(`cd ${__dirname} && npm run build`);
+        
+        logger.info('Build complete. Cleaning up...');
+        if (fs.existsSync(updatePath)) {
+          fs.unlinkSync(updatePath);
+        }
+        
+        logger.info('Update finished successfully. Restarting server...');
+        process.exit(0); // Docker will restart the container
+      } catch (err: any) {
+        logger.error(`Background update failed: ${err.message}`);
+      }
+    }, 1000);
+    
   } catch (e: any) {
     logger.error(`Update failed: ${e.message}`);
-    res.status(500).json({ error: `更新失败: ${e.message}` });
+    res.status(500).json({ error: `更新触发失败: ${e.message}` });
   }
 });
 
@@ -890,8 +942,10 @@ app.post('/api/test/push', async (req, res) => {
     }
   }
   
-  if (errorMsg) {
+  if (errorMsg && !successMsg) {
     res.status(400).json({ error: errorMsg });
+  } else if (errorMsg && successMsg) {
+    res.json({ success: true, message: successMsg, error: errorMsg, partial: true });
   } else if (successMsg) {
     res.json({ success: true, message: successMsg });
   } else {
@@ -1014,7 +1068,7 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(password, salt);
     db.prepare('INSERT INTO users (id, username, password_hash, salt, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(crypto.randomUUID(), username, hash, salt, role || 'user', 1);
+      .run(crypto.randomUUID(), username, hash, salt, role || 'user', 0);
     logger.info(`Admin created new user: ${username}`);
     res.json({ success: true });
   } catch (e: any) {
@@ -1055,6 +1109,12 @@ app.post('/api/research', authenticateToken, (req, res) => {
     const taskId = Date.now().toString();
     const user = (req as any).user.username;
     
+    if (currentRunningTask) {
+      return res.status(409).json({ 
+        error: `系统繁忙：正在为 ${currentRunningTask.username} 生成《${currentRunningTask.topic}》报告。请耐心等待，做完他的，再做你的。` 
+      });
+    }
+
     db.prepare('INSERT INTO tasks (id, topic, status) VALUES (?, ?, ?)').run(taskId, topic, 'running');
     
     logger.info(`User ${user} started research task: ${topic}`);
@@ -1104,6 +1164,17 @@ app.get('/api/reports/:filename', authenticateToken, (req, res) => {
   const filepath = path.join(__dirname, 'reports', req.params.filename);
   if (fs.existsSync(filepath)) {
     res.download(filepath);
+  } else {
+    res.status(404).send('File not found');
+  }
+});
+
+app.delete('/api/reports/:filename', authenticateToken, requireAdmin, (req, res) => {
+  const filepath = path.join(__dirname, 'reports', req.params.filename);
+  if (fs.existsSync(filepath)) {
+    fs.unlinkSync(filepath);
+    logger.info(`Admin deleted report: ${req.params.filename}`);
+    res.json({ success: true });
   } else {
     res.status(404).send('File not found');
   }
