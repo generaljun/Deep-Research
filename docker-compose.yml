@@ -3,9 +3,9 @@ services:
   deep-research-web:
     build: .
     container_name: deep-research-web
-    # 飞牛 NAS 推荐使用 host 模式，完美继承宿主机 DNS 和透明代理
-    network_mode: "host"
     restart: always
+    ports:
+      - "3000:3000" # 宿主机端口:容器端口 (Lucky 反代 6789 -> 3000)
     environment:
       - NODE_ENV=production
       - PORT=3000
