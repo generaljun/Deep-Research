@@ -91,7 +91,7 @@ services:
     build: . # 如果在本地构建
     container_name: deep-research-web
     ports:
-      - "6789:3000" # 宿主机端口:容器端口 (配合 Lucky 反代使用 6789)
+      - "3000:3000" # 宿主机端口:容器端口 (配合 Lucky 反代使用 6789 -> 3000)
     volumes:
       - ./data:/app/data       # SQLite 数据库存储目录
       - ./reports:/app/reports # 生成的 Markdown 报告存储目录
