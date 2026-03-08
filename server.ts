@@ -155,7 +155,7 @@ if (zombieTasks.changes > 0) {
 
 const getSetting = (key: string, defaultValue = '') => {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as any;
-  return row ? row.value : defaultValue;
+  return (row && row.value) ? row.value : defaultValue;
 };
 
 const setSetting = (key: string, value: string) => {
@@ -169,6 +169,9 @@ let jwtSecret = getSetting('jwt_secret');
 if (!jwtSecret) {
   jwtSecret = crypto.randomBytes(32).toString('hex');
   setSetting('jwt_secret', jwtSecret);
+  logger.info('Generated new JWT secret');
+} else {
+  logger.info('Loaded existing JWT secret');
 }
 
 const hashPassword = (password: string, salt: string) => {
@@ -223,7 +226,13 @@ const resetLoginAttempts = (ip: string) => {
 // Middleware
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  let token = authHeader && authHeader.split(' ')[1];
+  
+  // Also check query parameter (useful for direct file downloads via <a> tags)
+  if (!token && req.query.token) {
+    token = req.query.token as string;
+  }
+
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
   jwt.verify(token, jwtSecret, (err: any, user: any) => {
@@ -291,7 +300,13 @@ const getLLMClient = () => {
   
   if (!apiKey) throw new Error('未配置大模型 API Key，请前往后台设置。');
   
-  const options: any = { apiKey, baseURL };
+  const options: any = { 
+    apiKey, 
+    baseURL,
+    timeout: 300000, // 增加到 300 秒 (5 分钟)，防止撰写长章节时超时
+    maxRetries: 2
+  };
+
   if (proxyUrl) {
     const agent = getProxyAgent(proxyUrl);
     options.httpAgent = agent;
@@ -393,30 +408,48 @@ const appendToFeishuDoc = async (documentId: string, markdown: string) => {
   const token = await getFeishuToken();
   if (!token) return;
 
-  // 简单的 Markdown 转 Feishu Docx Block 逻辑
-  // 飞书 Docx API 比较复杂，这里实现基础的文本追加
-  const lines = markdown.split('\n').filter(l => l.trim() !== '');
-  const children: any[] = [];
+  const lines = markdown.split('\n').map(l => l.trim()).filter(l => l !== '');
+  if (lines.length === 0) return;
 
+  const children: any[] = [];
   for (const line of lines) {
-    if (line.startsWith('# ')) {
-      children.push({ block_type: 1, heading1: { content: [{ text_element: { content: line.replace('# ', ''), text_run: {} } }] } });
-    } else if (line.startsWith('## ')) {
-      children.push({ block_type: 2, heading2: { content: [{ text_element: { content: line.replace('## ', ''), text_run: {} } }] } });
-    } else if (line.startsWith('### ')) {
-      children.push({ block_type: 3, heading3: { content: [{ text_element: { content: line.replace('### ', ''), text_run: {} } }] } });
-    } else {
-      children.push({ block_type: 22, text: { content: [{ text_element: { content: line, text_run: {} } }] } });
+    try {
+      if (line.startsWith('# ')) {
+        children.push({ block_type: 3, heading1: { elements: [{ text_run: { content: line.replace('# ', '') } }] } });
+      } else if (line.startsWith('## ')) {
+        children.push({ block_type: 4, heading2: { elements: [{ text_run: { content: line.replace('## ', '') } }] } });
+      } else if (line.startsWith('### ')) {
+        children.push({ block_type: 5, heading3: { elements: [{ text_run: { content: line.replace('### ', '') } }] } });
+      } else {
+        // 限制单行长度，防止飞书 API 报错
+        const safeText = line.substring(0, 2000);
+        children.push({ block_type: 2, text: { elements: [{ text_run: { content: safeText } }] } });
+      }
+    } catch (e) {
+      logger.error(`Error parsing line for Feishu: ${line}`);
     }
   }
 
-  // 批量追加 Block
-  // 注意：飞书 API 对一次追加的 block 数量有限制，这里简单处理
-  await axios.post(`https://open.feishu.cn/open-apis/docx/v1/documents/${documentId}/blocks/${documentId}/children`, {
-    children: children.slice(0, 50) // 限制单次数量
-  }, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
+  if (children.length === 0) return;
+
+  try {
+    // 飞书 API 限制单次追加 block 数量（通常为 50-100）
+    // 我们需要分批发送
+    const batchSize = 50;
+    for (let i = 0; i < children.length; i += batchSize) {
+      const batch = children.slice(i, i + batchSize);
+      await axios.post(`https://open.feishu.cn/open-apis/docx/v1/documents/${documentId}/blocks/${documentId}/children`, {
+        children: batch,
+        index: -1
+      }, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+    }
+  } catch (e: any) {
+    const errorMsg = e.response?.data?.msg || e.message;
+    logger.error(`Feishu append failed: ${errorMsg}`);
+    throw new Error(`飞书文档追加失败: ${errorMsg}`);
+  }
 };
 
 // ==========================================
@@ -430,8 +463,8 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
   const reportsDir = path.join(__dirname, 'reports');
   if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
   
-  const filePath = path.join(reportsDir, `Report_${taskId}.md`);
-  const modelPlanner = getSetting('model_planner', 'qwen-coder-plus');
+  let filePath = '';
+  const modelPlanner = getSetting('model_planner', 'qwen-plus');
   const modelWriter = getSetting('model_writer', 'qwen-plus');
 
   try {
@@ -472,6 +505,12 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
       const errCode = e.response?.status || e.code || 'UNKNOWN';
       throw new Error(`[大纲规划模块] 生成大纲失败。错误代码: ${errCode}, 原因: ${e.message}`);
     }
+
+    // 生成带时间戳的文件名: 用户名-报告名-生成时间.md
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+    const safeTitle = outline.report_title.replace(/[\/\\?%*:|"<>]/g, '-');
+    filePath = path.join(reportsDir, `${user}-${safeTitle}-${timeStr}.md`);
 
     runningTask.progress = 10;
     broadcastLog(taskId, `✅ 大纲生成完毕，共 ${outline.chapters.length} 章。准备写入本地文件...`, 'success');
@@ -529,14 +568,20 @@ ${searchResults}`;
           temperature: 0.6,
         }));
 
-        const content = writerRes.choices[0].message.content || '';
+        let content = writerRes.choices[0].message.content || '';
         
-        fs.appendFileSync(filePath, `## ${chapter.chapter_title}\n\n${content}\n\n`);
+        // 防止标题重复：如果内容没有以 ## 开头，或者没有包含当前章节标题，则手动加上
+        let finalContent = content;
+        if (!content.includes(chapter.chapter_title)) {
+          finalContent = `## ${chapter.chapter_title}\n\n${content}`;
+        }
+        
+        fs.appendFileSync(filePath, `${finalContent}\n\n`);
         
         // 同步到飞书文档
         if (feishuDocId) {
           try {
-            await appendToFeishuDoc(feishuDocId, `## ${chapter.chapter_title}\n\n${content}`);
+            await appendToFeishuDoc(feishuDocId, finalContent);
           } catch (e: any) {
             logger.error(`Feishu append failed: ${e.message}`);
           }
@@ -558,6 +603,9 @@ ${searchResults}`;
 
     runningTask.progress = 100;
     broadcastLog(taskId, `🎉 全文撰写完毕！报告已保存至：${filePath}`, 'success');
+    if (feishuDocId) {
+      broadcastLog(taskId, `📄 飞书文档已同步完成：https://bytedance.feishu.cn/docx/${feishuDocId}`, 'success');
+    }
     db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run('completed', taskId);
     
     const feishuLink = feishuDocId ? `\n飞书文档：https://bytedance.feishu.cn/docx/${feishuDocId}` : '';
@@ -983,7 +1031,7 @@ app.delete('/api/users/:id', authenticateToken, requireAdmin, (req: any, res: an
 
 // Settings API
 app.get('/api/settings', authenticateToken, requireAdmin, (req, res) => {
-  const keys = ['aliyun_api_key', 'llm_base_url', 'model_planner', 'model_writer', 'bocha_api_key', 'tg_bot_token', 'tg_chat_id', 'feishu_webhook', 'http_proxy'];
+  const keys = ['aliyun_api_key', 'llm_base_url', 'model_planner', 'model_writer', 'bocha_api_key', 'tg_bot_token', 'tg_chat_id', 'feishu_app_id', 'feishu_app_secret', 'http_proxy'];
   const settings: Record<string, string> = {};
   keys.forEach(k => settings[k] = getSetting(k));
   res.json(settings);
@@ -1000,19 +1048,23 @@ app.post('/api/settings', authenticateToken, requireAdmin, (req, res) => {
 
 // Task API
 app.post('/api/research', authenticateToken, (req, res) => {
-  const { topic, length } = req.body;
-  if (!topic) return res.status(400).json({ error: 'Topic is required' });
+  try {
+    const { topic, length } = req.body;
+    if (!topic) return res.status(400).json({ error: 'Topic is required' });
 
-  const taskId = Date.now().toString();
-  db.prepare('INSERT INTO tasks (id, topic, status) VALUES (?, ?, ?)').run(taskId, topic, 'running');
-  
-  const user = (req as any).user.username;
-  db.prepare('INSERT INTO tasks (id, topic, status) VALUES (?, ?, ?)').run(taskId, topic, 'running');
-  
-  logger.info(`User ${user} started research task: ${topic}`);
-  runDeepResearch(taskId, topic, length, user);
-  
-  res.json({ taskId, message: 'Task started successfully' });
+    const taskId = Date.now().toString();
+    const user = (req as any).user.username;
+    
+    db.prepare('INSERT INTO tasks (id, topic, status) VALUES (?, ?, ?)').run(taskId, topic, 'running');
+    
+    logger.info(`User ${user} started research task: ${topic}`);
+    runDeepResearch(taskId, topic, length, user);
+    
+    res.json({ taskId, message: 'Task started successfully' });
+  } catch (e: any) {
+    logger.error(`Error starting research task: ${e.message}`);
+    res.status(500).json({ error: `启动任务失败: ${e.message}` });
+  }
 });
 
 // Reports API
@@ -1024,7 +1076,22 @@ app.get('/api/reports', authenticateToken, (req, res) => {
     const files = fs.readdirSync(reportsDir).filter(f => f.endsWith('.md'));
     const reports = files.map(f => {
       const stats = fs.statSync(path.join(reportsDir, f));
-      return { filename: f, size: stats.size, createdAt: stats.birthtime };
+      
+      // 尝试从文件名解析时间 (格式: 用户名-报告名-YYYYMMDD_HHMMSS.md)
+      let createdAt = stats.mtime;
+      const timeMatch = f.match(/-(\d{8}_\d{6})\.md$/);
+      if (timeMatch) {
+        const t = timeMatch[1];
+        const year = parseInt(t.substring(0, 4));
+        const month = parseInt(t.substring(4, 6)) - 1;
+        const day = parseInt(t.substring(6, 8));
+        const hour = parseInt(t.substring(9, 11));
+        const minute = parseInt(t.substring(11, 13));
+        const second = parseInt(t.substring(13, 15));
+        createdAt = new Date(year, month, day, hour, minute, second);
+      }
+      
+      return { filename: f, size: stats.size, createdAt };
     }).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     res.json(reports);
   } catch (e) {
@@ -1109,7 +1176,7 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
   try {
     const client = getLLMClient();
     const response = await client.chat.completions.create({
-      model: getSetting('model_planner', 'qwen-coder-plus'),
+      model: getSetting('model_planner', 'qwen-plus'),
       messages: req.body.messages,
     });
     res.json({ reply: response.choices[0].message.content });
@@ -1136,7 +1203,7 @@ app.post('/api/generate-outline', authenticateToken, async (req, res) => {
   ]
 }`;
     const response = await client.chat.completions.create({
-      model: getSetting('model_planner', 'qwen-coder-plus'),
+      model: getSetting('model_planner', 'qwen-plus'),
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
     });

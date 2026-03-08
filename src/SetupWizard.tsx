@@ -1,5 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2, AlertCircle, ArrowRight, Server, MessageSquare, Key, ShieldCheck } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, ArrowRight, Server, MessageSquare, Key, ShieldCheck, HelpCircle } from 'lucide-react';
+
+const TooltipLabel = ({ label, title, desc }: { label: string, title: string, desc: string }) => (
+  <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">
+    {label}
+    <div className="relative group">
+      <HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-blue-500 dark:hover:text-cyan-400 cursor-help transition-colors" />
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-800 dark:bg-cyan-950 text-white dark:text-cyan-100 text-xs rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none border border-slate-700 dark:border-cyan-800">
+        <div className="font-bold mb-1.5 text-sm text-blue-300 dark:text-cyan-300">{title}</div>
+        <p className="text-slate-300 dark:text-cyan-100/80 leading-relaxed">{desc}</p>
+        <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-800 dark:bg-cyan-950 border-b border-r border-slate-700 dark:border-cyan-800 rotate-45"></div>
+      </div>
+    </div>
+  </label>
+);
 
 export default function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(1);
@@ -147,7 +161,11 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                 <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">为了保障您的 NAS 安全，请设置管理员 (admin) 的初始密码。</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">管理员密码</label>
+                <TooltipLabel 
+                  label="管理员密码" 
+                  title="管理员初始密码" 
+                  desc="用于登录后台管理系统，至少 6 位字符。" 
+                />
                 <input 
                   type="password" 
                   value={settings.adminPassword} 
@@ -168,27 +186,46 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">API Key (如阿里云百炼)</label>
+                  <TooltipLabel 
+                    label="API Key (如阿里云百炼)" 
+                    title="大模型 API 密钥" 
+                    desc="用于调用大模型接口的凭证。" 
+                  />
                   <input type="password" value={settings.aliyun_api_key} onChange={e => handleChange('aliyun_api_key', e.target.value)} placeholder="sk-..." className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">Base URL</label>
+                  <TooltipLabel 
+                    label="Base URL" 
+                    title="API 接口地址" 
+                    desc="大模型服务的请求地址。阿里云百炼默认为 https://dashscope.aliyuncs.com/compatible-mode/v1。" 
+                  />
                   <input type="text" value={settings.llm_base_url} onChange={e => handleChange('llm_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">规划师模型</label>
+                    <TooltipLabel 
+                      label="规划师模型" 
+                      title="大纲生成模型" 
+                      desc="负责理解用户意图、规划报告结构和生成大纲。建议使用推理能力强的模型，如 qwen-max。" 
+                    />
                     <input type="text" value={settings.model_planner} onChange={e => handleChange('model_planner', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">撰稿人模型</label>
+                    <TooltipLabel 
+                      label="撰稿人模型" 
+                      title="正文撰写模型" 
+                      desc="负责根据大纲和检索结果撰写长文。建议使用长文本生成能力强的模型，如 qwen-plus。" 
+                    />
                     <input type="text" value={settings.model_writer} onChange={e => handleChange('model_writer', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">网络代理 (可选)</label>
+                  <TooltipLabel 
+                    label="网络代理 (可选)" 
+                    title="API 网络代理" 
+                    desc="如果您的 NAS 无法直连 API，请在此输入代理地址。透明代理用户可留空。" 
+                  />
                   <input type="text" value={settings.http_proxy} onChange={e => handleChange('http_proxy', e.target.value)} placeholder="http://192.168.10.12:7890" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
-                  <p className="text-xs text-slate-500 mt-1">如果您的 NAS 无法直连 API，请在此输入代理地址。透明代理用户可留空。</p>
                 </div>
                 <button 
                   onClick={() => testConnection('llm')}
@@ -211,13 +248,20 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">博查 API Key</label>
+                  <TooltipLabel 
+                    label="博查 API Key" 
+                    title="博查 Web Search API" 
+                    desc="用于联网检索最新资料。请前往博查开放平台 (bochaai.com) 注册并获取 API Key。" 
+                  />
                   <input type="password" value={settings.bocha_api_key} onChange={e => handleChange('bocha_api_key', e.target.value)} placeholder="sk-..." className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">网络代理 (可选)</label>
+                  <TooltipLabel 
+                    label="网络代理 (可选)" 
+                    title="检索网络代理" 
+                    desc="如果您的 NAS 无法直连博查 API，请在此输入代理地址。" 
+                  />
                   <input type="text" value={settings.http_proxy} onChange={e => handleChange('http_proxy', e.target.value)} placeholder="http://192.168.10.12:7890" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
-                  <p className="text-xs text-slate-500 mt-1">如果您的 NAS 无法直连博查 API，请在此输入代理地址。</p>
                 </div>
                 <button 
                   onClick={() => testConnection('search')}
@@ -240,27 +284,46 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">Telegram 网络代理 (SOCKS5/HTTP)</label>
+                  <TooltipLabel 
+                    label="Telegram 网络代理 (SOCKS5/HTTP)" 
+                    title="Telegram 代理配置" 
+                    desc="用于解决国内 NAS 无法直连 Telegram 的问题。格式如：socks5h://192.168.10.2:1070 或 http://127.0.0.1:7890。仅对 Telegram 推送生效。" 
+                  />
                   <input type="text" value={settings.http_proxy} onChange={e => handleChange('http_proxy', e.target.value)} placeholder="socks5h://192.168.10.2:1070" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
-                  <p className="text-xs text-slate-500 mt-1">仅对 Telegram 推送生效，解决国内 NAS 无法直连的问题。</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">TG Bot Token</label>
+                    <TooltipLabel 
+                      label="TG Bot Token" 
+                      title="TG 机器人 Token" 
+                      desc="向 @BotFather 申请的机器人 Token。" 
+                    />
                     <input type="password" value={settings.tg_bot_token} onChange={e => handleChange('tg_bot_token', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">TG Chat ID</label>
+                    <TooltipLabel 
+                      label="TG Chat ID" 
+                      title="TG 接收者 ID" 
+                      desc="接收通知的用户或群组 ID。" 
+                    />
                     <input type="text" value={settings.tg_chat_id} onChange={e => handleChange('tg_chat_id', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">飞书 App ID</label>
+                    <TooltipLabel 
+                      label="飞书 App ID" 
+                      title="飞书自建应用 App ID" 
+                      desc="在飞书开放平台自建应用的“凭证与基础信息”中获取。" 
+                    />
                     <input type="text" value={settings.feishu_app_id} onChange={e => handleChange('feishu_app_id', e.target.value)} placeholder="cli_..." className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">飞书 App Secret</label>
+                    <TooltipLabel 
+                      label="飞书 App Secret" 
+                      title="飞书自建应用 App Secret" 
+                      desc="在飞书开放平台自建应用的“凭证与基础信息”中获取。" 
+                    />
                     <input type="password" value={settings.feishu_app_secret} onChange={e => handleChange('feishu_app_secret', e.target.value)} placeholder="***" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                 </div>

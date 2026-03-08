@@ -107,7 +107,8 @@ export default function App() {
     bocha_api_key: '',
     tg_bot_token: '',
     tg_chat_id: '',
-    feishu_webhook: '',
+    feishu_app_id: '',
+    feishu_app_secret: '',
     http_proxy: ''
   });
 
@@ -338,38 +339,78 @@ export default function App() {
         </header>
 
         {user?.mustChangePassword ? (
-          <ChangePasswordView token={token} onPasswordChanged={() => {
+          <ChangePasswordView token={token} onLogout={handleLogout} onPasswordChanged={() => {
             const updatedUser = { ...user, mustChangePassword: false };
             localStorage.setItem('user', JSON.stringify(updatedUser));
             setUser(updatedUser);
           }} />
         ) : (
-          <>
-            {activeTab === 'generator' && <GeneratorView token={token} user={user} />}
-            {activeTab === 'reports' && <ReportsView token={token} />}
-            {activeTab === 'admin' && user?.role === 'admin' && <AdminView token={token} settings={settings} handleChange={handleChange} setSettings={setSettings} />}
-          </>
+          <div className="relative">
+            <div className={activeTab === 'generator' ? 'block' : 'hidden'}>
+              <GeneratorView token={token} user={user} onLogout={handleLogout} isActive={activeTab === 'generator'} />
+            </div>
+            <div className={activeTab === 'reports' ? 'block' : 'hidden'}>
+              <ReportsView token={token} onLogout={handleLogout} isActive={activeTab === 'reports'} />
+            </div>
+            {user?.role === 'admin' && (
+              <div className={activeTab === 'admin' ? 'block' : 'hidden'}>
+                <AdminView token={token} settings={settings} handleChange={handleChange} setSettings={setSettings} onLogout={handleLogout} isActive={activeTab === 'admin'} />
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-function ReportsView({ token }: { token: string }) {
+function ReportsView({ token, onLogout, isActive }: { token: string, onLogout: () => void, isActive: boolean }) {
   const [reports, setReports] = useState<{filename: string, size: number, createdAt: string}[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const handleDownload = async (filename: string) => {
+    try {
+      const response = await fetch(`/api/reports/${filename}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.status === 401 || response.status === 403) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) throw new Error('Download failed');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Download error:', error);
+    }
+  };
+
   useEffect(() => {
+    if (!isActive) return;
     fetch('/api/reports', {
       headers: { 'Authorization': `Bearer ${token}` }
     })
-      .then(res => res.json())
+      .then(res => {
+        if (res.status === 401 || res.status === 403) {
+          onLogout();
+          return [];
+        }
+        return res.json();
+      })
       .then(data => {
         setReports(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, [token, isActive]);
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
@@ -406,14 +447,13 @@ function ReportsView({ token }: { token: string }) {
                     </div>
                   </div>
                 </div>
-                <a 
-                  href={`/api/reports/${r.filename}?token=${token}`} 
-                  download 
+                <button 
+                  onClick={() => handleDownload(r.filename)}
                   className="px-5 py-2.5 bg-blue-50/50 dark:bg-cyan-950/50 text-slate-600 dark:text-cyan-300 border border-slate-200 dark:border-cyan-800 rounded-xl text-sm font-bold hover:bg-blue-100 dark:bg-cyan-900 hover:border-blue-500 dark:hover:border-cyan-400 transition-all flex items-center gap-2 shrink-0"
                 >
                   <Download className="w-4 h-4" />
                   下载 Markdown
-                </a>
+                </button>
               </div>
             ))}
           </div>
@@ -423,7 +463,7 @@ function ReportsView({ token }: { token: string }) {
   );
 }
 
-function GeneratorView({ token, user }: { token: string, user: any }) {
+function GeneratorView({ token, user, onLogout, isActive }: { token: string, user: any, onLogout: () => void, isActive: boolean }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [topic, setTopic] = useState('');
   const [length, setLength] = useState('5000-8000');
@@ -444,9 +484,19 @@ function GeneratorView({ token, user }: { token: string, user: any }) {
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!token) return;
     fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => setCurrentUser(data));
+      .then(res => {
+        if (res.status === 401 || res.status === 403) {
+          onLogout();
+          return null;
+        }
+        return res.json();
+      })
+      .then(data => {
+        if (data) setCurrentUser(data);
+      })
+      .catch(err => console.error('Auth check failed:', err));
   }, [token, status]);
 
   useEffect(() => {
@@ -517,11 +567,21 @@ function GeneratorView({ token, user }: { token: string, user: any }) {
         },
         body: JSON.stringify({ messages: newMessages }),
       });
+      
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          onLogout();
+          throw new Error('登录已过期，请重新登录');
+        }
+        const errorData = await res.json().catch(() => ({ error: `服务器返回错误 (${res.status})` }));
+        throw new Error(errorData.error || '请求失败');
+      }
+
       const data = await res.json();
       setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }]);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setMessages((prev) => [...prev, { role: 'assistant', content: '抱歉，网络请求失败，请检查后端配置。' }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: `❌ 请求失败: ${error.message || '网络连接异常'}。请检查后端配置或代理设置。` }]);
     } finally {
       setLoading(false);
     }
@@ -538,12 +598,22 @@ function GeneratorView({ token, user }: { token: string, user: any }) {
         },
         body: JSON.stringify({ topic, length }),
       });
+      
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          onLogout();
+          throw new Error('登录已过期，请重新登录');
+        }
+        const errorData = await res.json().catch(() => ({ error: `服务器返回错误 (${res.status})` }));
+        throw new Error(errorData.error || '生成大纲失败');
+      }
+
       const data = await res.json();
       setOutline(data);
       setStep(3);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('生成大纲失败，请重试。');
+      alert(`生成大纲失败: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -570,8 +640,17 @@ function GeneratorView({ token, user }: { token: string, user: any }) {
         },
         body: JSON.stringify({ topic: outline?.report_title || topic, length }),
       });
+      
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          onLogout();
+          throw new Error('登录已过期，请重新登录');
+        }
+        const errorData = await res.json().catch(() => ({ error: `服务器返回错误 (${res.status})` }));
+        throw new Error(errorData.error || '启动任务失败');
+      }
+
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
       setTaskId(data.taskId);
     } catch (error: any) {
       console.error(error);
@@ -940,7 +1019,7 @@ const TooltipLabel = ({ label, title, desc }: { label: string, title: string, de
   </label>
 );
 
-function AdminView({ token, settings, handleChange, setSettings }: { token: string, settings: Record<string, string>, handleChange: (key: string, value: string) => void, setSettings: React.Dispatch<React.SetStateAction<Record<string, string>>> }) {
+function AdminView({ token, settings, handleChange, setSettings, onLogout, isActive }: { token: string, settings: Record<string, string>, handleChange: (key: string, value: string) => void, setSettings: React.Dispatch<React.SetStateAction<Record<string, string>>>, onLogout: () => void, isActive: boolean }) {
   const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'logs' | 'system'>('settings');
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
@@ -963,19 +1042,30 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
   };
 
   useEffect(() => {
+    if (!isActive) return;
     fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
+      .then(res => {
+        if (res.status === 401 || res.status === 403) {
+          onLogout();
+          return {};
+        }
+        return res.json();
+      })
       .then(data => setSettings(prev => ({ ...prev, ...data })));
       
     fetchUsers();
     fetchLogs();
     checkUpdate();
-  }, [token]);
+  }, [token, isActive]);
 
   const checkUpdate = async () => {
     setCheckingUpdate(true);
     try {
       const res = await fetch('/api/system/check-update', { headers: { 'Authorization': `Bearer ${token}` } });
+      if (res.status === 401 || res.status === 403) {
+        onLogout();
+        return;
+      }
       const data = await res.json();
       if (res.ok) setVersionInfo(data);
     } catch (e) {
@@ -1037,13 +1127,25 @@ function AdminView({ token, settings, handleChange, setSettings }: { token: stri
 
   const fetchUsers = () => {
     fetch('/api/users', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
+      .then(res => {
+        if (res.status === 401 || res.status === 403) {
+          onLogout();
+          return [];
+        }
+        return res.json();
+      })
       .then(data => setUsers(data));
   };
 
   const fetchLogs = () => {
     fetch('/api/logs', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
+      .then(res => {
+        if (res.status === 401 || res.status === 403) {
+          onLogout();
+          return [];
+        }
+        return res.json();
+      })
       .then(data => setLogs(data));
   };
 
@@ -1363,13 +1465,21 @@ const handleSearchChange = (searchName: string) => {
                   />
                   <input type="text" placeholder="-1001234567890" value={settings.tg_chat_id} onChange={e => handleChange('tg_chat_id', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
                 </div>
-                <div className="md:col-span-2">
+                <div>
                   <TooltipLabel 
-                    label="Feishu Webhook URL" 
-                    title="飞书群机器人 Webhook" 
-                    desc="在飞书群设置中添加自定义机器人获取的 Webhook 地址。格式如 https://open.feishu.cn/open-apis/bot/v2/hook/..." 
+                    label="Feishu App ID" 
+                    title="飞书自建应用 App ID" 
+                    desc="在飞书开放平台自建应用的“凭证与基础信息”中获取。" 
                   />
-                  <input type="text" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." value={settings.feishu_webhook} onChange={e => handleChange('feishu_webhook', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
+                  <input type="text" placeholder="cli_xxxxxxxxxxxx" value={settings.feishu_app_id} onChange={e => handleChange('feishu_app_id', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
+                </div>
+                <div>
+                  <TooltipLabel 
+                    label="Feishu App Secret" 
+                    title="飞书自建应用 App Secret" 
+                    desc="在飞书开放平台自建应用的“凭证与基础信息”中获取。" 
+                  />
+                  <input type="password" placeholder="xxxxxxxxxxxxxxxxxxxx" value={settings.feishu_app_secret} onChange={e => handleChange('feishu_app_secret', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
                 </div>
               </div>
             </div>
@@ -1768,7 +1878,7 @@ function LoginView({ onLogin }: { onLogin: (token: string, user: any) => void })
   );
 }
 
-function ChangePasswordView({ token, onPasswordChanged }: { token: string, onPasswordChanged: () => void }) {
+function ChangePasswordView({ token, onLogout, onPasswordChanged }: { token: string, onLogout: () => void, onPasswordChanged: () => void }) {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
