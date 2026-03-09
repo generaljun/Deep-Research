@@ -1,4 +1,4 @@
-# ✨ 江军的深度报告生成AI助手 (Deep Research Web)
+# ✨ 深度报告生成AI助手 (Deep Research Web)
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-green.svg)
