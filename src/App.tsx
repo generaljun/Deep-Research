@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info, Trash2 } from 'lucide-react';
+import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info, Trash2, Github } from 'lucide-react';
 import SetupWizard from './SetupWizard';
 import AnimationDemo from './AnimationDemo';
 
@@ -233,26 +233,40 @@ export default function App() {
       </div>
 
       {/* Hero Image Section */}
-      <div className="relative w-full h-64 md:h-80 overflow-hidden rounded-b-[3rem] shadow-sm mb-8 z-10">
-        <img 
-          src="https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&q=80&w=2000" 
-          alt="Anime Landscape" 
-          className="absolute inset-0 w-full h-full object-cover object-center opacity-90 dark:opacity-70 transition-opacity duration-500"
-          referrerPolicy="no-referrer"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-white/80 dark:from-[#030712]/90 via-white/20 dark:via-[#030712]/40 to-transparent backdrop-blur-[2px]"></div>
+      <div className="relative w-full h-72 md:h-96 overflow-hidden rounded-b-[3rem] shadow-sm mb-8 z-10">
+        <div className="absolute inset-0 bg-slate-900">
+          <img 
+            src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=2000" 
+            alt="Professional Tech Background" 
+            className="absolute inset-0 w-full h-full object-cover object-center opacity-40 transition-opacity duration-1000"
+            referrerPolicy="no-referrer"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/50 to-slate-900"></div>
+        </div>
+        
         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-          <button 
-            onClick={() => setIsDemoOpen(true)}
-            className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 backdrop-blur-md text-white text-xs font-bold px-4 py-2 rounded-full transition-all flex items-center gap-2"
-          >
-            <Play className="w-3 h-3" /> 动画演示
-          </button>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-800 dark:text-cyan-50 drop-shadow-md mb-2 transition-colors duration-500" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>
-            江军的深度报告生成AI助手
+          <div className="flex gap-3 mb-6">
+            <button 
+              onClick={() => setIsDemoOpen(true)}
+              className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white text-xs font-bold px-5 py-2.5 rounded-full transition-all flex items-center gap-2 border border-white/20"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" /> 动画演示
+            </button>
+            <a 
+              href="https://github.com/generaljun/Deep-Research"
+              target="_blank"
+              rel="noreferrer"
+              className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white text-xs font-bold px-5 py-2.5 rounded-full transition-all flex items-center gap-2 border border-white/20"
+            >
+              <Github className="w-3.5 h-3.5" /> GitHub
+            </a>
+          </div>
+          
+          <h1 className="text-4xl md:text-6xl font-black tracking-tight text-white mb-4 transition-colors duration-500" style={{ fontFamily: "'Inter', sans-serif" }}>
+            深度报告生成AI助手
           </h1>
-          <p className="text-slate-600 dark:text-cyan-200/80 font-medium tracking-wide bg-white/50 dark:bg-[#0a0a0a]/50 backdrop-blur-md px-4 py-1 rounded-full text-sm shadow-sm transition-colors duration-500">
-            ✨ 简约 · 智能 · 专属引擎
+          <p className="text-blue-200/80 font-medium tracking-[0.2em] uppercase text-xs md:text-sm bg-blue-500/10 backdrop-blur-sm px-6 py-2 rounded-full border border-blue-400/20 shadow-xl transition-colors duration-500">
+            Minimalist · Intelligent · Research Engine
           </p>
         </div>
       </div>
@@ -365,13 +379,13 @@ export default function App() {
 }
 
 function ReportsView({ token, user, onLogout, isActive }: { token: string, user: any, onLogout: () => void, isActive: boolean }) {
-  const [reports, setReports] = useState<{filename: string, size: number, createdAt: string}[]>([]);
+  const [reports, setReports] = useState<{id: string, title: string, topic: string, feishu_url: string, html_path: string, created_at: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  const handleDownload = async (filename: string) => {
+  const handleDownloadHtml = async (id: string, title: string) => {
     try {
-      const response = await fetch(`/api/reports/${filename}`, {
+      const response = await fetch(`/api/reports/${id}/download`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.status === 401 || response.status === 403) {
@@ -384,7 +398,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename;
+      a.download = `${title}.html`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -394,9 +408,34 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
     }
   };
 
-  const handleDelete = async (filename: string) => {
+  const handleDownloadMd = async (id: string, title: string) => {
     try {
-      const response = await fetch(`/api/reports/${filename}`, {
+      const response = await fetch(`/api/reports/${id}/md`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.status === 401 || response.status === 403) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) throw new Error('Download failed');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title}.md`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Download error:', error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const response = await fetch(`/api/reports/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -405,7 +444,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
         return;
       }
       if (!response.ok) throw new Error('Delete failed');
-      setReports(prev => prev.filter(r => r.filename !== filename));
+      setReports(prev => prev.filter(r => r.id !== id));
       setConfirmDelete(null);
     } catch (error) {
       console.error('Delete error:', error);
@@ -440,7 +479,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
           <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-cyan-950 border border-blue-200 dark:border-cyan-500/30 flex items-center justify-center">
             <Archive className="w-5 h-5 text-blue-500 dark:text-cyan-400" />
           </div>
-          本地报告归档
+          报告管理中心
         </h2>
 
         {loading ? (
@@ -454,33 +493,66 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
         ) : (
           <div className="grid gap-4 relative z-10">
             {reports.map(r => (
-              <div key={r.filename} className="bg-slate-50 dark:bg-[#030712] border border-slate-100 dark:border-cyan-900/30 hover:border-blue-500 dark:border-cyan-500/50 transition-all p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 group">
+              <div key={r.id} className="bg-slate-50 dark:bg-[#030712] border border-slate-100 dark:border-cyan-900/30 hover:border-blue-500 dark:border-cyan-500/50 transition-all p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 group">
                 <div className="flex items-start gap-4">
                   <div className="w-10 h-10 rounded-lg bg-blue-50/50 dark:bg-cyan-950/50 flex items-center justify-center shrink-0">
                     <FileText className="w-5 h-5 text-blue-500 dark:text-cyan-400" />
                   </div>
                   <div>
-                    <h3 className="text-slate-700 dark:text-cyan-100 font-bold text-lg group-hover:text-slate-600 dark:text-cyan-300 transition-colors">{r.filename.replace('.md', '')}</h3>
+                    <h3 className="text-slate-700 dark:text-cyan-100 font-bold text-lg group-hover:text-slate-600 dark:text-cyan-300 transition-colors">{r.title}</h3>
                     <div className="text-xs text-blue-400 dark:text-slate-500 dark:text-cyan-500/60 mt-1 font-mono flex gap-3">
-                      <span>{new Date(r.createdAt).toLocaleString()}</span>
-                      <span>{(r.size / 1024).toFixed(2)} KB</span>
+                      <span>课题: {r.topic}</span>
+                      <span>•</span>
+                      <span>{new Date(r.created_at).toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button 
-                    onClick={() => handleDownload(r.filename)}
-                    className="px-5 py-2.5 bg-blue-50/50 dark:bg-cyan-950/50 text-slate-600 dark:text-cyan-300 border border-slate-200 dark:border-cyan-800 rounded-xl text-sm font-bold hover:bg-blue-100 dark:bg-cyan-900 hover:border-blue-500 dark:hover:border-cyan-400 transition-all flex items-center gap-2"
+                  <a 
+                    href={`/api/reports/${r.id}/view`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2 bg-blue-50/50 dark:bg-cyan-950/50 text-blue-600 dark:text-cyan-400 border border-blue-200 dark:border-cyan-800 rounded-xl text-sm font-bold hover:bg-blue-100 dark:bg-cyan-900 transition-all flex items-center gap-2"
                   >
-                    <Download className="w-4 h-4" />
-                    下载 Markdown
-                  </button>
+                    <Monitor className="w-4 h-4" />
+                    Web 预览
+                  </a>
+                  {r.feishu_url && (
+                    <a 
+                      href={r.feishu_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2 bg-emerald-50/50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-xl text-sm font-bold hover:bg-emerald-100 dark:bg-emerald-900 transition-all flex items-center gap-2"
+                    >
+                      <FileText className="w-4 h-4" />
+                      飞书文档
+                    </a>
+                  )}
+                  <div className="relative group/download">
+                    <button className="p-2.5 bg-slate-50 dark:bg-[#030712] text-slate-600 dark:text-cyan-300 border border-slate-200 dark:border-cyan-800 rounded-xl hover:bg-slate-100 dark:hover:bg-cyan-900 transition-all">
+                      <Download className="w-4 h-4" />
+                    </button>
+                    <div className="absolute bottom-full right-0 mb-2 w-40 bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl shadow-xl opacity-0 invisible group-hover/download:opacity-100 group-hover/download:visible transition-all z-50 overflow-hidden">
+                      <button 
+                        onClick={() => handleDownloadHtml(r.id, r.title)}
+                        className="w-full px-4 py-2 text-left text-xs font-bold text-slate-600 dark:text-cyan-300 hover:bg-slate-50 dark:hover:bg-cyan-900 transition-colors border-b border-slate-100 dark:border-cyan-900/30"
+                      >
+                        下载 HTML (交互式)
+                      </button>
+                      <button 
+                        onClick={() => handleDownloadMd(r.id, r.title)}
+                        className="w-full px-4 py-2 text-left text-xs font-bold text-slate-600 dark:text-cyan-300 hover:bg-slate-50 dark:hover:bg-cyan-900 transition-colors"
+                      >
+                        下载 Markdown
+                      </button>
+                    </div>
+                  </div>
                   {user?.role === 'admin' && (
-                    confirmDelete === r.filename ? (
+                    confirmDelete === r.id ? (
                       <div className="flex items-center gap-2 bg-red-50/50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 rounded-xl px-3 py-1.5">
                         <span className="text-xs text-red-600 dark:text-red-400 font-medium mr-2">确认删除?</span>
                         <button 
-                          onClick={() => handleDelete(r.filename)}
+                          onClick={() => handleDelete(r.id)}
                           className="text-xs font-bold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors"
                         >
                           确认
@@ -495,7 +567,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
                       </div>
                     ) : (
                       <button 
-                        onClick={() => setConfirmDelete(r.filename)}
+                        onClick={() => setConfirmDelete(r.id)}
                         className="p-2.5 bg-red-50/50 dark:bg-red-950/50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/80 transition-all flex items-center justify-center"
                         title="删除报告"
                       >
@@ -523,6 +595,7 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
   const [outline, setOutline] = useState<Outline | null>(null);
   const [status, setStatus] = useState<'idle' | 'generating' | 'done'>('idle');
   const [taskId, setTaskId] = useState<string | null>(null);
+  const [reportUrls, setReportUrls] = useState<{ feishuUrl: string | null, webUrl: string | null } | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [systemStatus, setSystemStatus] = useState<{ isBusy: boolean, currentTask: any }>({ isBusy: false, currentTask: null });
   const [currentUser, setCurrentUser] = useState(user);
@@ -580,8 +653,12 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
       setLogs(prev => [...prev, data]);
     };
 
-    eventSource.addEventListener('done', () => {
+    eventSource.addEventListener('done', (e: any) => {
       setStatus('done');
+      try {
+        const data = JSON.parse(e.data);
+        setReportUrls(data);
+      } catch (err) {}
       eventSource.close();
     });
 
@@ -996,10 +1073,34 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
                 <div className="w-16 h-16 rounded-full bg-emerald-900/50 border border-emerald-500/50 flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
                   <CheckCircle className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
                 </div>
-                <h3 className="text-xl font-bold text-emerald-600 dark:text-emerald-400">核心引擎已点火！</h3>
-                <p className="text-sm text-emerald-200/60 max-w-md mx-auto leading-relaxed">
-                  您可以安全地关闭此页面。NAS 后端正在为您进行深度检索和撰写，完成后将通过 Telegram 和飞书发送最终报告。
+                <h3 className="text-xl font-bold text-emerald-600 dark:text-emerald-400">报告生成完毕！</h3>
+                <p className="text-sm text-emerald-200/60 max-w-md mx-auto leading-relaxed mb-6">
+                  深度研究报告已完成。您可以选择以下方式查看或下载报告。
                 </p>
+                <div className="flex flex-col md:flex-row justify-center gap-4 relative z-10">
+                  {reportUrls?.webUrl && (
+                    <a 
+                      href={reportUrls.webUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/20"
+                    >
+                      <Monitor className="w-5 h-5" />
+                      前往 Web 页面查看
+                    </a>
+                  )}
+                  {reportUrls?.feishuUrl && (
+                    <a 
+                      href={reportUrls.feishuUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/20"
+                    >
+                      <FileText className="w-5 h-5" />
+                      前往飞书文档查看
+                    </a>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1035,21 +1136,62 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
               <div className="text-blue-600 dark:text-cyan-600 animate-pulse">Waiting for server logs...</div>
             )}
             
-            {logs.map((log, idx) => (
-              <div key={idx} className="flex gap-4 relative z-20">
-                <span className="text-blue-700 dark:text-cyan-700 shrink-0 select-none">
-                  [{new Date(log.timestamp).toLocaleTimeString()}]
-                </span>
-                <span className={`
-                  ${log.type === 'error' ? 'text-red-500 dark:text-red-400 font-bold' : ''}
-                  ${log.type === 'success' ? 'text-emerald-600 dark:text-emerald-400 font-bold' : ''}
-                  ${log.type === 'warning' ? 'text-amber-500 dark:text-amber-400' : ''}
-                  ${log.type === 'info' ? 'text-slate-600 dark:text-cyan-300' : ''}
-                `}>
-                  {log.message}
-                </span>
+            {logs.map((log, idx) => {
+              let displayMessage = log.message;
+              if (displayMessage.includes('🔗 Web 预览地址：')) {
+                const path = displayMessage.split('：')[1];
+                displayMessage = `🔗 Web 预览地址：${window.location.origin}${path}`;
+              }
+
+              return (
+                <div key={idx} className="flex gap-4 relative z-20">
+                  <span className="text-blue-700 dark:text-cyan-700 shrink-0 select-none">
+                    [{new Date(log.timestamp).toLocaleTimeString()}]
+                  </span>
+                  <span className={`
+                    ${log.type === 'error' ? 'text-red-500 dark:text-red-400 font-bold' : ''}
+                    ${log.type === 'success' ? 'text-emerald-600 dark:text-emerald-400 font-bold' : ''}
+                    ${log.type === 'warning' ? 'text-amber-500 dark:text-amber-400' : ''}
+                    ${log.type === 'info' ? 'text-slate-600 dark:text-cyan-300' : ''}
+                  `}>
+                    {displayMessage}
+                  </span>
+                </div>
+              );
+            })}
+
+            {status === 'done' && (
+              <div className="mt-6 p-4 bg-emerald-950/20 border border-emerald-500/30 rounded-xl relative z-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                  <span className="text-emerald-400 font-bold text-sm">系统指令：任务已就绪，请选择操作</span>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {reportUrls?.webUrl && (
+                    <a 
+                      href={reportUrls.webUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/50 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                    >
+                      <Monitor className="w-3.5 h-3.5" />
+                      立即预览 (Web)
+                    </a>
+                  )}
+                  {reportUrls?.feishuUrl && (
+                    <a 
+                      href={reportUrls.feishuUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/50 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      飞书文档
+                    </a>
+                  )}
+                </div>
               </div>
-            ))}
+            )}
             <div ref={logsEndRef} />
           </div>
         </div>

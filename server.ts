@@ -139,6 +139,16 @@ try {
       tier INTEGER DEFAULT 0,
       lock_until DATETIME
     );
+    CREATE TABLE IF NOT EXISTS reports (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      topic TEXT,
+      user TEXT,
+      feishu_url TEXT,
+      html_path TEXT,
+      md_path TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
   console.log('Database initialized successfully');
 } catch (err) {
@@ -452,6 +462,157 @@ const appendToFeishuDoc = async (documentId: string, markdown: string) => {
   }
 };
 
+import MarkdownIt from 'markdown-it';
+import anchor from 'markdown-it-anchor';
+import toc from 'markdown-it-table-of-contents';
+
+const md = new MarkdownIt({
+  html: true,
+  linkify: true,
+  typographer: true,
+});
+md.use(anchor, { permalink: anchor.permalink.headerLink() });
+md.use(toc);
+
+const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string) => {
+  const content = md.render(markdown);
+  return `
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body { font-family: 'Inter', 'Noto Sans SC', sans-serif; }
+        .prose { max-width: 65ch; margin: 0 auto; }
+        .prose h1 { font-size: 2.25rem; font-weight: 800; margin-top: 2rem; margin-bottom: 1rem; color: #111827; }
+        .prose h2 { font-size: 1.5rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.75rem; color: #1f2937; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
+        .prose h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: #374151; }
+        .prose p { margin-top: 1rem; margin-bottom: 1rem; line-height: 1.75; color: #4b5563; }
+        .prose ul { list-style-type: disc; padding-left: 1.5rem; margin-top: 1rem; margin-bottom: 1rem; }
+        .prose ol { list-style-type: decimal; padding-left: 1.5rem; margin-top: 1rem; margin-bottom: 1rem; }
+        .prose li { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        .prose table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; margin-bottom: 1.5rem; font-size: 0.875rem; }
+        .prose th { background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 0.75rem; text-align: left; font-weight: 600; }
+        .prose td { border: 1px solid #e5e7eb; padding: 0.75rem; }
+        .prose blockquote { border-left: 4px solid #3b82f6; padding-left: 1rem; font-style: italic; color: #6b7280; margin: 1.5rem 0; }
+        .prose pre { background-color: #1f2937; color: #f3f4f6; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 1.5rem 0; }
+        .prose code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.875em; }
+        .table-of-contents { background-color: #f3f4f6; padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 2rem; }
+        .table-of-contents ul { list-style-type: none; padding-left: 0; }
+        .table-of-contents li { margin-bottom: 0.5rem; }
+        .table-of-contents a { color: #2563eb; text-decoration: none; }
+        .table-of-contents a:hover { text-decoration: underline; }
+        .chart-container { margin: 2rem 0; padding: 1.5rem; background: white; border: 1px solid #e5e7eb; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        @media (max-width: 768px) { .prose { padding: 0 1rem; } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+    <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-bottom border-slate-200 py-4 px-6 mb-8">
+        <div class="max-w-5xl mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">DR</div>
+                <span class="font-bold text-lg tracking-tight">Deep Research Report</span>
+            </div>
+            <div class="flex space-x-4">
+                ${feishuUrl ? `<a href="${feishuUrl}" target="_blank" class="text-sm font-medium text-emerald-600 hover:text-emerald-700 transition-colors">飞书文档</a>` : ''}
+                <button onclick="window.print()" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">打印报告</button>
+                <a href="#" id="download-md" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">下载 MD</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-4xl mx-auto px-4 pb-24">
+        <header class="mb-12 text-center">
+            <h1 class="text-4xl md:text-5xl font-extrabold text-slate-900 mb-4">${title}</h1>
+            <div class="flex justify-center items-center space-x-4 text-slate-500 text-sm">
+                <span>生成时间: ${new Date().toLocaleString()}</span>
+                <span>•</span>
+                <span>由 AI 深度研究系统生成</span>
+            </div>
+        </header>
+
+        <div class="prose prose-slate lg:prose-xl">
+            ${content}
+        </div>
+    </main>
+
+    <footer class="bg-white border-t border-slate-200 py-12">
+        <div class="max-w-4xl mx-auto px-4 text-center text-slate-500 text-sm">
+            <p>© ${new Date().getFullYear()} Deep Research Web. All rights reserved.</p>
+            <p class="mt-2">本报告内容由 AI 生成，仅供参考，不代表任何投资建议。</p>
+        </div>
+    </footer>
+
+    <script>
+        hljs.highlightAll();
+
+        // 自动识别表格并生成图表
+        document.querySelectorAll('table').forEach((table, index) => {
+            const rows = Array.from(table.querySelectorAll('tr'));
+            if (rows.length < 2) return;
+
+            const headers = Array.from(rows[0].querySelectorAll('th, td')).map(el => el.innerText.trim());
+            const dataRows = rows.slice(1);
+            
+            // 检查是否适合做图表 (至少有两列，一列是文字，一列是数字)
+            const numericCols = [];
+            for (let j = 0; j < headers.length; j++) {
+                let isNumeric = true;
+                for (let i = 0; i < dataRows.length; i++) {
+                    const val = dataRows[i].querySelectorAll('td')[j]?.innerText.replace(/[^0-9.-]/g, '');
+                    if (isNaN(parseFloat(val))) {
+                        isNumeric = false;
+                        break;
+                    }
+                }
+                if (isNumeric) numericCols.push(j);
+            }
+
+            if (numericCols.length > 0) {
+                const container = document.createElement('div');
+                container.className = 'chart-container';
+                const canvas = document.createElement('canvas');
+                canvas.id = 'chart-' + index;
+                container.appendChild(canvas);
+                table.parentNode.insertBefore(container, table.nextSibling);
+
+                const labels = dataRows.map(row => row.querySelectorAll('td')[0]?.innerText.trim());
+                const datasets = numericCols.map((colIdx, i) => {
+                    return {
+                        label: headers[colIdx],
+                        data: dataRows.map(row => parseFloat(row.querySelectorAll('td')[colIdx]?.innerText.replace(/[^0-9.-]/g, ''))),
+                        backgroundColor: \`hsla(\${(i * 137) % 360}, 70%, 60%, 0.5)\`,
+                        borderColor: \`hsla(\${(i * 137) % 360}, 70%, 50%, 1)\`,
+                        borderWidth: 1
+                    };
+                });
+
+                new Chart(canvas, {
+                    type: 'bar',
+                    data: { labels, datasets },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { position: 'top' },
+                            title: { display: true, text: '数据可视化: ' + headers[0] }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+  `;
+};
+
 // ==========================================
 // 5. Core Deep Research Engine & Queue
 // ==========================================
@@ -550,17 +711,23 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 
       try {
         broadcastLog(taskId, `✍️ 正在调用撰稿人 (${modelWriter}) 撰写本章正文...`);
-        const writerPrompt = `你是一位顶级的行业资深撰稿人。请根据【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
-【行文要求】
+        const writerPrompt = `你是一位顶级的学术研究员与行业资深撰稿人。请根据【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
+
+【学术规范与行文要求】
 1. 章节编号：本章是报告的第 ${i + 1} 章。请在标题中明确体现，例如：“第 ${i + 1} 章：${chapter.chapter_title}”。
 2. 深度剖析：不要只做数据的堆砌，必须对数据背后的商业逻辑、技术瓶颈进行深度推演。
-3. 可视化图表：为了让报告输出可视化效果更好，请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格来展示核心数据或逻辑关系。**严禁使用 Mermaid 语法或任何其他需要特殊渲染的代码块**，以确保报告在任何标准 Markdown 阅读器中都能完美显示。合理使用二级/三级标题、加粗、引用块等元素增强排版美感。
-4. 严禁废话：直接输出正文，绝对不要输出“好的”、“以下是为您撰写的内容”等废话。
-5. 严谨性：数据和事实必须严格依据【参考素材】，不得产生幻觉。
-6. 数据溯源标注：报告中引用的数据和结论，必须在句末使用小标（如：[^1]、[^2]）进行标注。
-7. 参考文献列表：必须在本章正文的最后，单独设立一个“### 本章参考数据源”小节，将正文中用到的小标对应的来源统一列出，格式必须包含标题和完整的URL，例如：
-   [^1]: [来源文章标题](URL)
-   让用户可以直接点击打开去深度挖掘。
+3. 可视化图表：请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格。**严禁使用 Mermaid 语法**。合理使用二级/三级标题、加粗、引用块等元素。
+4. 案例分析格式：若涉及案例研究，请使用“【案例分析】”标识，并采用缩进或引用块（>）形式突出显示，包含：背景、核心举措、成效评估、启示。
+5. 数据标注规范：
+   - 数据引用：所有关键数据必须在句末使用方括号上标形式标注，如 [1]、[2]。
+   - 引用格式：参考学术期刊规范（GB/T 7714-2015）。
+6. 参考文献列表：必须在本章正文的最后，设立“### 参考文献与数据源”小节，按顺序排列。格式如下：
+   - 网页/新闻：[序号] 作者. 标题 [EB/OL]. (发布日期) [引用日期]. URL.
+   - 报告/期刊：[序号] 作者. 标题 [J/R]. 刊名/机构, 年份.
+   示例：
+   [1] 艾瑞咨询. 2024年中国AI大模型行业研究报告 [R]. 艾瑞咨询, 2024.
+   [2] 财新网. 全球半导体供应链重构观察 [EB/OL]. (2023-12-01) [2024-03-09]. http://...
+7. 严禁废话：直接输出正文，绝对不要输出任何开场白或结束语。
 
 章节标题：${chapter.chapter_title}
 核心论点：${chapter.core_points}
@@ -609,14 +776,41 @@ ${searchResults}`;
 
     runningTask.progress = 100;
     broadcastLog(taskId, `🎉 全文撰写完毕！报告已保存至：${filePath}`, 'success');
+    
+    // 生成 HTML 报告
+    let htmlPath = '';
+    try {
+      const markdown = fs.readFileSync(filePath, 'utf8');
+      const feishuUrl = feishuDocId ? `https://bytedance.feishu.cn/docx/${feishuDocId}` : undefined;
+      const htmlContent = generateHtmlReport(outline.report_title, markdown, feishuUrl);
+      htmlPath = filePath.replace('.md', '.html');
+      fs.writeFileSync(htmlPath, htmlContent);
+      broadcastLog(taskId, `🌐 交互式 HTML 报告已生成。`, 'success');
+    } catch (e: any) {
+      logger.error(`HTML report generation failed: ${e.message}`);
+    }
+
+    // 存入数据库
+    try {
+      db.prepare('INSERT INTO reports (id, title, topic, user, feishu_url, html_path, md_path) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(taskId, outline.report_title, topic, user, feishuDocId ? `https://bytedance.feishu.cn/docx/${feishuDocId}` : null, htmlPath, filePath);
+    } catch (e: any) {
+      logger.error(`Failed to save report to database: ${e.message}`);
+    }
+
     if (feishuDocId) {
       broadcastLog(taskId, `📄 飞书文档已同步完成：https://bytedance.feishu.cn/docx/${feishuDocId}`, 'success');
     }
+    
+    const webUrl = `/api/reports/${taskId}/view`;
+    broadcastLog(taskId, `🔗 Web 预览地址：${webUrl}`, 'success');
+
     db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run('completed', taskId);
     
     const feishuLink = feishuDocId ? `\n飞书文档：https://bytedance.feishu.cn/docx/${feishuDocId}` : '';
-    await sendNotifications(`🎉 深度研究报告生成完毕！\n课题：${topic}${feishuLink}\n请前往 NAS 目录查看：${filePath}`);
-    taskEvents.emit(`done-${taskId}`);
+    const webLink = `\nWeb 预览：${webUrl}`;
+    await sendNotifications(`🎉 深度研究报告生成完毕！\n课题：${topic}${feishuLink}${webLink}\n请前往 NAS 目录查看：${filePath}`);
+    taskEvents.emit(`done-${taskId}`, JSON.stringify({ feishuUrl: feishuDocId ? `https://bytedance.feishu.cn/docx/${feishuDocId}` : null, webUrl }));
 
   } catch (error: any) {
     const errCode = error.response?.status || error.code || 'UNKNOWN';
@@ -1131,53 +1325,68 @@ app.post('/api/research', authenticateToken, (req, res) => {
 // Reports API
 app.get('/api/reports', authenticateToken, (req, res) => {
   try {
-    const reportsDir = path.join(__dirname, 'reports');
-    if (!fs.existsSync(reportsDir)) return res.json([]);
-    
-    const files = fs.readdirSync(reportsDir).filter(f => f.endsWith('.md'));
-    const reports = files.map(f => {
-      const stats = fs.statSync(path.join(reportsDir, f));
-      
-      // 尝试从文件名解析时间 (格式: 用户名-报告名-YYYYMMDD_HHMMSS.md)
-      let createdAt = stats.mtime;
-      const timeMatch = f.match(/-(\d{8}_\d{6})\.md$/);
-      if (timeMatch) {
-        const t = timeMatch[1];
-        const year = parseInt(t.substring(0, 4));
-        const month = parseInt(t.substring(4, 6)) - 1;
-        const day = parseInt(t.substring(6, 8));
-        const hour = parseInt(t.substring(9, 11));
-        const minute = parseInt(t.substring(11, 13));
-        const second = parseInt(t.substring(13, 15));
-        createdAt = new Date(year, month, day, hour, minute, second);
-      }
-      
-      return { filename: f, size: stats.size, createdAt };
-    }).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const reports = db.prepare('SELECT * FROM reports ORDER BY created_at DESC').all();
     res.json(reports);
   } catch (e) {
-    logger.error(`Error reading reports: ${e}`);
+    logger.error(`Error reading reports from DB: ${e}`);
     res.json([]);
   }
 });
 
-app.get('/api/reports/:filename', authenticateToken, (req, res) => {
-  const filepath = path.join(__dirname, 'reports', req.params.filename);
-  if (fs.existsSync(filepath)) {
-    res.download(filepath);
-  } else {
-    res.status(404).send('File not found');
+app.get('/api/reports/:id/view', (req, res) => {
+  try {
+    const report = db.prepare('SELECT html_path FROM reports WHERE id = ?').get(req.params.id) as any;
+    if (report && report.html_path && fs.existsSync(report.html_path)) {
+      res.setHeader('Content-Type', 'text/html');
+      res.send(fs.readFileSync(report.html_path, 'utf8'));
+    } else {
+      res.status(404).send('Report not found');
+    }
+  } catch (e) {
+    res.status(500).send('Error loading report');
   }
 });
 
-app.delete('/api/reports/:filename', authenticateToken, requireAdmin, (req, res) => {
-  const filepath = path.join(__dirname, 'reports', req.params.filename);
-  if (fs.existsSync(filepath)) {
-    fs.unlinkSync(filepath);
-    logger.info(`Admin deleted report: ${req.params.filename}`);
-    res.json({ success: true });
-  } else {
-    res.status(404).send('File not found');
+app.get('/api/reports/:id/download', (req, res) => {
+  try {
+    const report = db.prepare('SELECT html_path, title FROM reports WHERE id = ?').get(req.params.id) as any;
+    if (report && report.html_path && fs.existsSync(report.html_path)) {
+      res.download(report.html_path, `${report.title}.html`);
+    } else {
+      res.status(404).send('Report not found');
+    }
+  } catch (e) {
+    res.status(500).send('Error downloading report');
+  }
+});
+
+app.get('/api/reports/:id/md', authenticateToken, (req, res) => {
+  try {
+    const report = db.prepare('SELECT md_path, title FROM reports WHERE id = ?').get(req.params.id) as any;
+    if (report && report.md_path && fs.existsSync(report.md_path)) {
+      res.download(report.md_path, `${report.title}.md`);
+    } else {
+      res.status(404).send('Report not found');
+    }
+  } catch (e) {
+    res.status(500).send('Error downloading report');
+  }
+});
+
+app.delete('/api/reports/:id', authenticateToken, requireAdmin, (req, res) => {
+  try {
+    const report = db.prepare('SELECT html_path, md_path FROM reports WHERE id = ?').get(req.params.id) as any;
+    if (report) {
+      if (report.html_path && fs.existsSync(report.html_path)) fs.unlinkSync(report.html_path);
+      if (report.md_path && fs.existsSync(report.md_path)) fs.unlinkSync(report.md_path);
+      db.prepare('DELETE FROM reports WHERE id = ?').run(req.params.id);
+      logger.info(`Admin deleted report: ${req.params.id}`);
+      res.json({ success: true });
+    } else {
+      res.status(404).send('Report not found');
+    }
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
 });
 
