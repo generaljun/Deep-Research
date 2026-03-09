@@ -558,50 +558,137 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string)
             const rows = Array.from(table.querySelectorAll('tr'));
             if (rows.length < 2) return;
 
-            const headers = Array.from(rows[0].querySelectorAll('th, td')).map(el => el.innerText.trim());
-            const dataRows = rows.slice(1);
+            // 获取表头
+            let headerCells = Array.from(rows[0].querySelectorAll('th, td'));
+            if (headerCells.length === 0) return;
+            const headers = headerCells.map(el => el.innerText.trim());
             
-            // 检查是否适合做图表 (至少有两列，一列是文字，一列是数字)
+            // 获取数据行
+            const dataRows = rows.slice(1).filter(row => row.querySelectorAll('td').length === headers.length);
+            if (dataRows.length === 0) return;
+
+            // 确定标签列 (通常是第一列)
+            const labelColIdx = 0;
+            const labels = dataRows.map(row => {
+                const cell = row.querySelectorAll('td')[labelColIdx];
+                return cell ? cell.innerText.trim() : '';
+            });
+
+            // 检查标签是否像年份/时间序列
+            const isTimeSeries = labels.every(label => /^(20\d{2}|19\d{2})(年|Q[1-4]|-[0-1]\d)?$/.test(label) || /^第[一二三四1-4]季度$/.test(label));
+
+            // 寻找数值列 (排除标签列)
             const numericCols = [];
             for (let j = 0; j < headers.length; j++) {
-                let isNumeric = true;
+                if (j === labelColIdx) continue; // 不把标签列作为数据列
+                
+                let validNumberCount = 0;
                 for (let i = 0; i < dataRows.length; i++) {
-                    const val = dataRows[i].querySelectorAll('td')[j]?.innerText.replace(/[^0-9.-]/g, '');
-                    if (isNaN(parseFloat(val))) {
-                        isNumeric = false;
-                        break;
+                    const cell = dataRows[i].querySelectorAll('td')[j];
+                    if (!cell) continue;
+                    const text = cell.innerText.trim();
+                    if (text === '' || text === '-') continue; // 允许空值或占位符
+                    
+                    // 提取数字，允许千分位逗号和百分号
+                    const cleanText = text.replace(/,/g, '').replace(/%/g, '');
+                    const val = parseFloat(cleanText);
+                    if (!isNaN(val)) {
+                        validNumberCount++;
                     }
                 }
-                if (isNumeric) numericCols.push(j);
+                // 如果该列超过一半是有效数字，则认为是数值列
+                if (validNumberCount > 0 && validNumberCount >= dataRows.length / 2) {
+                    numericCols.push(j);
+                }
             }
 
             if (numericCols.length > 0) {
                 const container = document.createElement('div');
                 container.className = 'chart-container';
+                container.style.height = '400px';
+                container.style.position = 'relative';
+                
                 const canvas = document.createElement('canvas');
                 canvas.id = 'chart-' + index;
                 container.appendChild(canvas);
                 table.parentNode.insertBefore(container, table.nextSibling);
 
-                const labels = dataRows.map(row => row.querySelectorAll('td')[0]?.innerText.trim());
+                // 预设一些好看的颜色组合 (Tailwind 风格)
+                const colors = [
+                    { bg: 'rgba(59, 130, 246, 0.2)', border: 'rgb(59, 130, 246)' }, // Blue
+                    { bg: 'rgba(16, 185, 129, 0.2)', border: 'rgb(16, 185, 129)' }, // Emerald
+                    { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgb(245, 158, 11)' }, // Amber
+                    { bg: 'rgba(139, 92, 246, 0.2)', border: 'rgb(139, 92, 246)' }, // Violet
+                    { bg: 'rgba(236, 72, 153, 0.2)', border: 'rgb(236, 72, 153)' }, // Pink
+                ];
+
                 const datasets = numericCols.map((colIdx, i) => {
+                    const color = colors[i % colors.length];
                     return {
                         label: headers[colIdx],
-                        data: dataRows.map(row => parseFloat(row.querySelectorAll('td')[colIdx]?.innerText.replace(/[^0-9.-]/g, ''))),
-                        backgroundColor: \`hsla(\${(i * 137) % 360}, 70%, 60%, 0.5)\`,
-                        borderColor: \`hsla(\${(i * 137) % 360}, 70%, 50%, 1)\`,
-                        borderWidth: 1
+                        data: dataRows.map(row => {
+                            const cell = row.querySelectorAll('td')[colIdx];
+                            if (!cell) return null;
+                            const text = cell.innerText.trim();
+                            if (text === '' || text === '-') return null;
+                            const cleanText = text.replace(/,/g, '').replace(/%/g, '');
+                            const val = parseFloat(cleanText);
+                            return isNaN(val) ? null : val;
+                        }),
+                        backgroundColor: color.bg,
+                        borderColor: color.border,
+                        borderWidth: 2,
+                        tension: 0.3, // 平滑曲线
+                        fill: isTimeSeries && numericCols.length === 1 // 只有单条线时才填充面积
                     };
                 });
 
+                // 决定图表类型
+                const chartType = isTimeSeries ? 'line' : 'bar';
+                
+                // 尝试获取表格上方的标题
+                let chartTitle = '数据可视化: ' + headers[0] + '相关数据';
+                const prevEl = table.previousElementSibling;
+                if (prevEl && prevEl.tagName.match(/^H[1-6]$/)) {
+                    chartTitle = prevEl.innerText;
+                }
+
                 new Chart(canvas, {
-                    type: 'bar',
+                    type: chartType,
                     data: { labels, datasets },
                     options: {
                         responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
                         plugins: {
-                            legend: { position: 'top' },
-                            title: { display: true, text: '数据可视化: ' + headers[0] }
+                            legend: { 
+                                position: 'top',
+                                labels: { font: { family: "'Inter', 'Noto Sans SC', sans-serif" } }
+                            },
+                            title: { 
+                                display: true, 
+                                text: chartTitle,
+                                font: { size: 16, family: "'Inter', 'Noto Sans SC', sans-serif", weight: 'bold' }
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                                titleFont: { family: "'Inter', 'Noto Sans SC', sans-serif" },
+                                bodyFont: { family: "'Inter', 'Noto Sans SC', sans-serif" },
+                                padding: 12,
+                                cornerRadius: 8
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(243, 244, 246, 1)' }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
                         }
                     }
                 });

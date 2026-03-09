@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info, Trash2, Github } from 'lucide-react';
+import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info, Trash2, Github, Eye, EyeOff } from 'lucide-react';
 import SetupWizard from './SetupWizard';
 import AnimationDemo from './AnimationDemo';
+import WebGLShader from './components/WebGLShader';
+import AnimatedCharacters from './components/AnimatedCharacters';
 
 type Message = {
   role: 'user' | 'assistant' | 'system';
@@ -235,13 +237,8 @@ export default function App() {
       {/* Hero Image Section */}
       <div className="relative w-full h-72 md:h-96 overflow-hidden rounded-b-[3rem] shadow-sm mb-8 z-10">
         <div className="absolute inset-0 bg-slate-900">
-          <img 
-            src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=2000" 
-            alt="Professional Tech Background" 
-            className="absolute inset-0 w-full h-full object-cover object-center opacity-40 transition-opacity duration-1000"
-            referrerPolicy="no-referrer"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/50 to-slate-900"></div>
+          <WebGLShader className="absolute inset-0 w-full h-full opacity-80 transition-opacity duration-1000" />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/30 to-slate-900"></div>
         </div>
         
         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
@@ -1986,6 +1983,21 @@ function LoginView({ onLogin }: { onLogin: (token: string, user: any) => void })
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Animation states
+  const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [typingLength, setTypingLength] = useState(0);
+
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUsername(e.target.value);
+    setTypingLength(e.target.value.length);
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+    setTypingLength(e.target.value.length);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -2016,58 +2028,83 @@ function LoginView({ onLogin }: { onLogin: (token: string, user: any) => void })
       <div className="absolute top-[-10%] left-[-5%] w-[40%] h-[40%] bg-blue-200/40 blur-[100px] rounded-full mix-blend-multiply pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-5%] w-[40%] h-[40%] bg-pink-200/40 blur-[100px] rounded-full mix-blend-multiply pointer-events-none"></div>
       
-      <div className="w-full max-w-md bg-white/80 border border-white/50 rounded-[2rem] p-8 backdrop-blur-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
-        <div className="flex justify-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-100 to-pink-100 flex items-center justify-center shadow-inner">
-            <Key className="w-8 h-8 text-blue-500" />
-          </div>
+      <div className="w-full max-w-4xl bg-white/80 border border-white/50 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-700 flex flex-col md:flex-row overflow-hidden backdrop-blur-xl">
+        
+        {/* Left Side: Animated Characters */}
+        <div className="hidden md:flex md:w-1/2 bg-indigo-50/50 p-8 items-center justify-center border-r border-slate-100">
+          <AnimatedCharacters 
+            isPasswordFocused={isPasswordFocused} 
+            isPasswordVisible={isPasswordVisible} 
+            typingLength={typingLength} 
+          />
         </div>
-        
-        <h2 className="text-2xl font-bold text-center text-slate-800 mb-2">系统访问授权</h2>
-        <p className="text-center text-slate-500 text-sm mb-8">请输入您的凭证以访问深度研究引擎</p>
-        
-        {error && (
-          <div className="bg-red-50 border border-red-100 text-red-500 px-4 py-3 rounded-xl mb-6 text-sm flex items-center gap-2">
-            <AlertCircle className="w-4 h-4" />
-            {error}
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">用户名</label>
-            <input 
-              type="text" 
-              value={username} 
-              onChange={e => setUsername(e.target.value)} 
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all"
-              placeholder="admin"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">密码</label>
-            <input 
-              type="password" 
-              value={password} 
-              onChange={e => setPassword(e.target.value)} 
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all"
-              placeholder="••••••••"
-              required
-            />
+
+        {/* Right Side: Form Content */}
+        <div className="w-full md:w-1/2 p-8 md:p-12 flex flex-col justify-center">
+          <div className="flex justify-center mb-8">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-100 to-pink-100 flex items-center justify-center shadow-inner">
+              <Key className="w-8 h-8 text-blue-500" />
+            </div>
           </div>
           
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full relative group overflow-hidden rounded-xl mt-6"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-pink-500 to-blue-500 bg-[length:200%_auto] animate-gradient group-hover:bg-[length:100%_auto] transition-all duration-500"></div>
-            <div className="relative px-4 py-3.5 flex items-center justify-center gap-2 text-white font-bold tracking-wide">
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : '登 录'}
+          <h2 className="text-2xl font-bold text-center text-slate-800 mb-2">系统访问授权</h2>
+          <p className="text-center text-slate-500 text-sm mb-8">请输入您的凭证以访问深度研究引擎</p>
+          
+          {error && (
+            <div className="bg-red-50 border border-red-100 text-red-500 px-4 py-3 rounded-xl mb-6 text-sm flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {error}
             </div>
-          </button>
-        </form>
+          )}
+          
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">用户名</label>
+              <input 
+                type="text" 
+                value={username} 
+                onChange={handleUsernameChange} 
+                onFocus={() => setIsPasswordFocused(false)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all"
+                placeholder="admin"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">密码</label>
+              <div className="relative">
+                <input 
+                  type={isPasswordVisible ? "text" : "password"} 
+                  value={password} 
+                  onChange={handlePasswordChange} 
+                  onFocus={() => setIsPasswordFocused(true)}
+                  onBlur={() => setIsPasswordFocused(false)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all pr-12"
+                  placeholder="••••••••"
+                  required
+                />
+                <button 
+                  type="button"
+                  onClick={() => setIsPasswordVisible(!isPasswordVisible)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {isPasswordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
+            
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full relative group overflow-hidden rounded-xl mt-6"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-pink-500 to-blue-500 bg-[length:200%_auto] animate-gradient group-hover:bg-[length:100%_auto] transition-all duration-500"></div>
+              <div className="relative px-4 py-3.5 flex items-center justify-center gap-2 text-white font-bold tracking-wide">
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : '登 录'}
+              </div>
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

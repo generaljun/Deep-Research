@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2, AlertCircle, ArrowRight, Server, MessageSquare, Key, ShieldCheck, HelpCircle } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, ArrowRight, Server, MessageSquare, Key, ShieldCheck, HelpCircle, Eye, EyeOff } from 'lucide-react';
+import AnimatedCharacters from './components/AnimatedCharacters';
 
 const TooltipLabel = ({ label, title, desc }: { label: string, title: string, desc: string }) => (
   <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-cyan-100 mb-2">
@@ -41,8 +42,14 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
   });
   const [diagnostics, setDiagnostics] = useState<string[]>([]);
 
+  // Animation states
+  const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [typingLength, setTypingLength] = useState(0);
+
   const handleChange = (key: string, value: string) => {
     setSettings(prev => ({ ...prev, [key]: value }));
+    setTypingLength(value.length);
   };
 
   const testConnection = async (type: 'llm' | 'search' | 'push') => {
@@ -118,10 +125,21 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#030712] flex items-center justify-center p-4 font-sans">
-      <div className="max-w-2xl w-full bg-white dark:bg-[#0a0a0a] rounded-3xl shadow-xl border border-slate-200 dark:border-cyan-900/30 overflow-hidden">
+      <div className="max-w-5xl w-full bg-white dark:bg-[#0a0a0a] rounded-3xl shadow-xl border border-slate-200 dark:border-cyan-900/30 overflow-hidden flex flex-col md:flex-row">
         
-        {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-cyan-600 p-8 text-white text-center relative overflow-hidden">
+        {/* Left Side: Animated Characters */}
+        <div className="hidden md:flex md:w-2/5 bg-indigo-50/50 dark:bg-slate-900/30 p-8 items-center justify-center border-r border-slate-100 dark:border-cyan-900/30">
+          <AnimatedCharacters 
+            isPasswordFocused={isPasswordFocused} 
+            isPasswordVisible={isPasswordVisible} 
+            typingLength={typingLength} 
+          />
+        </div>
+
+        {/* Right Side: Form Content */}
+        <div className="w-full md:w-3/5 flex flex-col">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-cyan-600 p-8 text-white text-center relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
           <h1 className="text-3xl font-black mb-2 relative z-10">系统初始化向导</h1>
           <p className="text-blue-100 relative z-10">只需 4 步，完成 Deep Research Web 私有化部署</p>
@@ -141,9 +159,9 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-8">
-          {error && (
+          {/* Content */}
+          <div className="p-8 flex-1">
+            {error && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl mb-6">
               <div className="flex items-center gap-2 mb-2">
                 <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -176,13 +194,24 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                   title="管理员初始密码" 
                   desc="用于登录后台管理系统，至少 6 位字符。" 
                 />
-                <input 
-                  type="password" 
-                  value={settings.adminPassword} 
-                  onChange={e => handleChange('adminPassword', e.target.value)} 
-                  placeholder="至少 6 位字符"
-                  className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
+                <div className="relative">
+                  <input 
+                    type={isPasswordVisible ? "text" : "password"} 
+                    value={settings.adminPassword} 
+                    onChange={e => handleChange('adminPassword', e.target.value)} 
+                    onFocus={() => setIsPasswordFocused(true)}
+                    onBlur={() => setIsPasswordFocused(false)}
+                    placeholder="至少 6 位字符"
+                    className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none pr-12"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setIsPasswordVisible(!isPasswordVisible)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-cyan-300"
+                  >
+                    {isPasswordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -201,7 +230,24 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                     title="大模型 API 密钥" 
                     desc="用于调用大模型接口的凭证。" 
                   />
-                  <input type="password" value={settings.aliyun_api_key} onChange={e => handleChange('aliyun_api_key', e.target.value)} placeholder="sk-..." className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <div className="relative">
+                    <input 
+                      type={isPasswordVisible ? "text" : "password"} 
+                      value={settings.aliyun_api_key} 
+                      onChange={e => handleChange('aliyun_api_key', e.target.value)} 
+                      onFocus={() => setIsPasswordFocused(true)}
+                      onBlur={() => setIsPasswordFocused(false)}
+                      placeholder="sk-..." 
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none pr-12" 
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setIsPasswordVisible(!isPasswordVisible)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-cyan-300"
+                    >
+                      {isPasswordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <TooltipLabel 
@@ -209,7 +255,13 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                     title="API 接口地址" 
                     desc="大模型服务的请求地址。阿里云百炼默认为 https://dashscope.aliyuncs.com/compatible-mode/v1。" 
                   />
-                  <input type="text" value={settings.llm_base_url} onChange={e => handleChange('llm_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input 
+                    type="text" 
+                    value={settings.llm_base_url} 
+                    onChange={e => handleChange('llm_base_url', e.target.value)} 
+                    onFocus={() => setIsPasswordFocused(false)}
+                    className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -218,7 +270,13 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                       title="大纲生成模型" 
                       desc="负责理解用户意图、规划报告结构和生成大纲。建议使用推理能力强的模型，如 qwen-max。" 
                     />
-                    <input type="text" value={settings.model_planner} onChange={e => handleChange('model_planner', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <input 
+                      type="text" 
+                      value={settings.model_planner} 
+                      onChange={e => handleChange('model_planner', e.target.value)} 
+                      onFocus={() => setIsPasswordFocused(false)}
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                    />
                   </div>
                   <div>
                     <TooltipLabel 
@@ -226,7 +284,13 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                       title="正文撰写模型" 
                       desc="负责根据大纲和检索结果撰写长文。建议使用长文本生成能力强的模型，如 qwen-plus。" 
                     />
-                    <input type="text" value={settings.model_writer} onChange={e => handleChange('model_writer', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <input 
+                      type="text" 
+                      value={settings.model_writer} 
+                      onChange={e => handleChange('model_writer', e.target.value)} 
+                      onFocus={() => setIsPasswordFocused(false)}
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                    />
                   </div>
                 </div>
                 <div>
@@ -235,7 +299,14 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                     title="API 网络代理" 
                     desc="如果您的 NAS 无法直连 API，请在此输入代理地址。透明代理用户可留空。" 
                   />
-                  <input type="text" value={settings.http_proxy} onChange={e => handleChange('http_proxy', e.target.value)} placeholder="http://192.168.10.12:7890" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input 
+                    type="text" 
+                    value={settings.http_proxy} 
+                    onChange={e => handleChange('http_proxy', e.target.value)} 
+                    onFocus={() => setIsPasswordFocused(false)}
+                    placeholder="http://192.168.10.12:7890" 
+                    className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                  />
                 </div>
                 <button 
                   onClick={() => testConnection('llm')}
@@ -263,7 +334,24 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                     title="博查 Web Search API" 
                     desc="用于联网检索最新资料。请前往博查开放平台 (bochaai.com) 注册并获取 API Key。" 
                   />
-                  <input type="password" value={settings.bocha_api_key} onChange={e => handleChange('bocha_api_key', e.target.value)} placeholder="sk-..." className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <div className="relative">
+                    <input 
+                      type={isPasswordVisible ? "text" : "password"} 
+                      value={settings.bocha_api_key} 
+                      onChange={e => handleChange('bocha_api_key', e.target.value)} 
+                      onFocus={() => setIsPasswordFocused(true)}
+                      onBlur={() => setIsPasswordFocused(false)}
+                      placeholder="sk-..." 
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none pr-12" 
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setIsPasswordVisible(!isPasswordVisible)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-cyan-300"
+                    >
+                      {isPasswordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <TooltipLabel 
@@ -271,7 +359,14 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                     title="检索网络代理" 
                     desc="如果您的 NAS 无法直连博查 API，请在此输入代理地址。" 
                   />
-                  <input type="text" value={settings.http_proxy} onChange={e => handleChange('http_proxy', e.target.value)} placeholder="http://192.168.10.12:7890" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input 
+                    type="text" 
+                    value={settings.http_proxy} 
+                    onChange={e => handleChange('http_proxy', e.target.value)} 
+                    onFocus={() => setIsPasswordFocused(false)}
+                    placeholder="http://192.168.10.12:7890" 
+                    className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                  />
                 </div>
                 <button 
                   onClick={() => testConnection('search')}
@@ -299,7 +394,14 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                     title="Telegram 代理配置" 
                     desc="用于解决国内 NAS 无法直连 Telegram 的问题。格式如：socks5h://192.168.10.2:1070 或 http://127.0.0.1:7890。仅对 Telegram 推送生效。" 
                   />
-                  <input type="text" value={settings.http_proxy} onChange={e => handleChange('http_proxy', e.target.value)} placeholder="socks5h://192.168.10.2:1070" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input 
+                    type="text" 
+                    value={settings.http_proxy} 
+                    onChange={e => handleChange('http_proxy', e.target.value)} 
+                    onFocus={() => setIsPasswordFocused(false)}
+                    placeholder="socks5h://192.168.10.2:1070" 
+                    className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -308,7 +410,16 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                       title="TG 机器人 Token" 
                       desc="向 @BotFather 申请的机器人 Token。" 
                     />
-                    <input type="password" value={settings.tg_bot_token} onChange={e => handleChange('tg_bot_token', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <div className="relative">
+                      <input 
+                        type={isPasswordVisible ? "text" : "password"} 
+                        value={settings.tg_bot_token} 
+                        onChange={e => handleChange('tg_bot_token', e.target.value)} 
+                        onFocus={() => setIsPasswordFocused(true)}
+                        onBlur={() => setIsPasswordFocused(false)}
+                        className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none pr-10" 
+                      />
+                    </div>
                   </div>
                   <div>
                     <TooltipLabel 
@@ -316,7 +427,13 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                       title="TG 接收者 ID" 
                       desc="接收通知的用户或群组 ID。" 
                     />
-                    <input type="text" value={settings.tg_chat_id} onChange={e => handleChange('tg_chat_id', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <input 
+                      type="text" 
+                      value={settings.tg_chat_id} 
+                      onChange={e => handleChange('tg_chat_id', e.target.value)} 
+                      onFocus={() => setIsPasswordFocused(false)}
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -326,7 +443,14 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                       title="飞书自建应用 App ID" 
                       desc="在飞书开放平台自建应用的“凭证与基础信息”中获取。" 
                     />
-                    <input type="text" value={settings.feishu_app_id} onChange={e => handleChange('feishu_app_id', e.target.value)} placeholder="cli_..." className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <input 
+                      type="text" 
+                      value={settings.feishu_app_id} 
+                      onChange={e => handleChange('feishu_app_id', e.target.value)} 
+                      onFocus={() => setIsPasswordFocused(false)}
+                      placeholder="cli_..." 
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                    />
                   </div>
                   <div>
                     <TooltipLabel 
@@ -334,7 +458,17 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                       title="飞书自建应用 App Secret" 
                       desc="在飞书开放平台自建应用的“凭证与基础信息”中获取。" 
                     />
-                    <input type="password" value={settings.feishu_app_secret} onChange={e => handleChange('feishu_app_secret', e.target.value)} placeholder="***" className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <div className="relative">
+                      <input 
+                        type={isPasswordVisible ? "text" : "password"} 
+                        value={settings.feishu_app_secret} 
+                        onChange={e => handleChange('feishu_app_secret', e.target.value)} 
+                        onFocus={() => setIsPasswordFocused(true)}
+                        onBlur={() => setIsPasswordFocused(false)}
+                        placeholder="***" 
+                        className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none pr-10" 
+                      />
+                    </div>
                   </div>
                 </div>
                 <button 
@@ -349,8 +483,8 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
             </div>
           )}
 
-          {/* Navigation */}
-          <div className="flex justify-between mt-10 pt-6 border-t border-slate-100 dark:border-cyan-900/30">
+            {/* Navigation */}
+            <div className="flex justify-between mt-10 pt-6 border-t border-slate-100 dark:border-cyan-900/30">
             {step > 1 ? (
               <button 
                 onClick={() => setStep(s => s - 1)}
@@ -376,6 +510,7 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : '完成初始化并启动系统'}
               </button>
             )}
+            </div>
           </div>
         </div>
       </div>
