@@ -474,8 +474,13 @@ const md = new MarkdownIt({
 md.use(anchor, { permalink: anchor.permalink.headerLink() });
 md.use(toc);
 
-const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string) => {
+const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string, createdAt?: string) => {
   const content = md.render(markdown);
+  // Calculate word count (simplified: count characters excluding whitespace)
+  const wordCount = markdown.replace(/\s+/g, '').length;
+  const readingTime = Math.ceil(wordCount / 500); // Assume 500 chars per minute
+  const displayTime = createdAt ? new Date(createdAt).toLocaleString() : new Date().toLocaleString();
+
   return `
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -511,19 +516,48 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string)
         .table-of-contents a:hover { text-decoration: underline; }
         .chart-container { margin: 2rem 0; padding: 1.5rem; background: white; border: 1px solid #e5e7eb; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
         @media (max-width: 768px) { .prose { padding: 0 1rem; } }
+        
+        /* Toast notification */
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            margin-left: -125px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1000;
+            left: 50%;
+            bottom: 30px;
+            font-size: 14px;
+        }
+        #toast.show {
+            visibility: visible;
+            -webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s;
+            animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        }
+        @-webkit-keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
+        @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
+        @-webkit-keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
+        @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
-    <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-bottom border-slate-200 py-4 px-6 mb-8">
+    <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 py-4 px-6 mb-8">
         <div class="max-w-5xl mx-auto flex justify-between items-center">
             <div class="flex items-center space-x-2">
                 <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">DR</div>
                 <span class="font-bold text-lg tracking-tight">Deep Research Report</span>
             </div>
-            <div class="flex space-x-4">
+            <div class="flex items-center space-x-4">
                 ${feishuUrl ? `<a href="${feishuUrl}" target="_blank" class="text-sm font-medium text-emerald-600 hover:text-emerald-700 transition-colors">飞书文档</a>` : ''}
-                <button onclick="window.print()" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">打印报告</button>
-                <a href="#" id="download-md" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">下载 MD</a>
+                <button onclick="shareReport()" class="flex items-center space-x-1 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-100 transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                    <span>分享</span>
+                </button>
+                <button onclick="window.print()" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">打印</button>
             </div>
         </div>
     </nav>
@@ -531,10 +565,21 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string)
     <main class="max-w-4xl mx-auto px-4 pb-24">
         <header class="mb-12 text-center">
             <h1 class="text-4xl md:text-5xl font-extrabold text-slate-900 mb-4">${title}</h1>
-            <div class="flex justify-center items-center space-x-4 text-slate-500 text-sm">
-                <span>生成时间: ${new Date().toLocaleString()}</span>
+            <div class="flex flex-wrap justify-center items-center gap-4 text-slate-500 text-sm">
+                <div class="flex items-center space-x-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    <span>生成时间: ${displayTime}</span>
+                </div>
                 <span>•</span>
-                <span>由 AI 深度研究系统生成</span>
+                <div class="flex items-center space-x-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    <span>全文共计: ${wordCount} 字</span>
+                </div>
+                <span>•</span>
+                <div class="flex items-center space-x-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span>预计阅读: ${readingTime} 分钟</span>
+                </div>
             </div>
         </header>
 
@@ -542,6 +587,8 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string)
             ${content}
         </div>
     </main>
+
+    <div id="toast">链接已成功复制到剪贴板</div>
 
     <footer class="bg-white border-t border-slate-200 py-12">
         <div class="max-w-4xl mx-auto px-4 text-center text-slate-500 text-sm">
@@ -551,6 +598,18 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string)
     </footer>
 
     <script>
+        function shareReport() {
+            const url = window.location.href;
+            navigator.clipboard.writeText(url).then(() => {
+                const toast = document.getElementById("toast");
+                toast.className = "show";
+                setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
+            }).catch(err => {
+                console.error('Copy failed:', err);
+                alert('复制链接失败，请手动复制浏览器地址栏链接。');
+            });
+        }
+
         hljs.highlightAll();
 
         // 自动识别表格并生成图表
@@ -648,9 +707,14 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string)
                 
                 // 尝试获取表格上方的标题
                 let chartTitle = '数据可视化: ' + headers[0] + '相关数据';
-                const prevEl = table.previousElementSibling;
-                if (prevEl && prevEl.tagName.match(/^H[1-6]$/)) {
-                    chartTitle = prevEl.innerText;
+                let currentEl = table.previousElementSibling;
+                while (currentEl) {
+                    if (currentEl.tagName.match(/^H[1-6]$/)) {
+                        chartTitle = currentEl.innerText;
+                        break;
+                    }
+                    if (currentEl.tagName === 'TABLE') break; // 跨过另一个表格则停止
+                    currentEl = currentEl.previousElementSibling;
                 }
 
                 new Chart(canvas, {
@@ -725,17 +789,18 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
     const client = getLLMClient();
     
     const plannerPrompt = `你是一个只输出 JSON 的数据转换接口。请根据用户探讨的课题：【${topic}】，生成一份深度研究报告大纲。
-预期篇幅：${length}字。必须融入行业特性。
+预期【正文】篇幅：${length}字（不含执行摘要、参考文献）。必须融入行业特性，体现深度思考。
 【致命约束】
-1. 绝对禁止输出任何 Markdown 标记（如 \`\`\`json）、禁止输出任何问候语或解释。
+1. 绝对禁止输出任何 Markdown 标记（如 \`\`\`json\`）、禁止输出任何问候语或解释。
 2. 必须严格遵守以下 JSON 结构：
 {
   "report_title": "报告主标题",
+  "executive_summary_points": "执行摘要的核心要点，需包含核心发现、行业趋势总结和战略建议",
   "chapters": [
     {
       "chapter_num": 1,
       "chapter_title": "第一章：...",
-      "core_points": "本章需要探讨的核心论点..."
+      "core_points": "本章需要探讨的核心论点，需强调逻辑链条整合与行业深度洞察。请确保本章撰写后的正文字数符合大纲预期的分布。"
     }
   ]
 }`;
@@ -780,6 +845,32 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
       broadcastLog(taskId, `⚠️ 飞书文档创建失败: ${e.message}`, 'warning');
     }
 
+    // 生成执行摘要
+    try {
+      broadcastLog(taskId, `📝 正在撰写执行摘要 (Executive Summary)...`);
+      const summaryPrompt = `你是一位顶级的战略咨询顾问。请根据报告标题【${outline.report_title}】和以下核心要点，撰写一份极具洞察力的“执行摘要（Executive Summary）”。
+      
+核心要点：${outline.executive_summary_points}
+
+要求：
+1. 站在行业高度，总结核心发现。
+2. 揭示不同信息链条之间的内在逻辑联系。
+3. 给出具有前瞻性的战略建议。
+4. 篇幅约 500-800 字，直接输出正文，不要任何开场白。`;
+
+      const summaryRes = await withRetry(() => client.chat.completions.create({
+        model: modelWriter,
+        messages: [{ role: 'user', content: summaryPrompt }],
+        temperature: 0.5,
+      }));
+      
+      const summaryContent = `## 执行摘要 (Executive Summary)\n\n${summaryRes.choices[0].message.content || ''}\n\n---\n\n`;
+      fs.appendFileSync(filePath, summaryContent);
+      if (feishuDocId) await appendToFeishuDoc(feishuDocId, summaryContent);
+    } catch (e: any) {
+      broadcastLog(taskId, `⚠️ 执行摘要生成失败: ${e.message}`, 'warning');
+    }
+
     for (let i = 0; i < outline.chapters.length; i++) {
       const chapter = outline.chapters[i];
       runningTask.progress = 10 + Math.floor((i / outline.chapters.length) * 80);
@@ -802,10 +893,11 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 
 【学术规范与行文要求】
 1. 章节编号：本章是报告的第 ${i + 1} 章。请在标题中明确体现，例如：“第 ${i + 1} 章：${chapter.chapter_title}”。
-2. 深度剖析：不要只做数据的堆砌，必须对数据背后的商业逻辑、技术瓶颈进行深度推演。
-3. 可视化图表：请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格。**严禁使用 Mermaid 语法**。合理使用二级/三级标题、加粗、引用块等元素。
-4. 案例分析格式：若涉及案例研究，请使用“【案例分析】”标识，并采用缩进或引用块（>）形式突出显示，包含：背景、核心举措、成效评估、启示。
-5. 数据标注规范：
+2. 深度剖析：严禁简单的信息堆砌。你必须对搜集到的信息进行“链条式整合”，分析不同现象之间的因果关系、行业底层逻辑以及未来的演进趋势。
+3. 行业洞察：融入你作为资深专家的行业思考，对技术瓶颈、市场博弈、政策导向进行深度推演。
+4. 可视化图表：请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格。**严禁使用 Mermaid 语法**。在表格前必须提供一个描述性的三级标题（如：### 2024年中国AI大模型市场规模预测），以便系统自动生成图表标题。合理使用二级/三级标题、加粗、引用块等元素。
+5. 案例分析格式：若涉及案例研究，请使用“【案例分析】”标识，并采用缩进或引用块（>）形式突出显示，包含：背景、核心举措、成效评估、启示。
+6. 数据标注规范：
    - 数据引用：所有关键数据必须在句末使用方括号上标形式标注，如 [1]、[2]。
    - 引用格式：参考学术期刊规范（GB/T 7714-2015）。
 6. 参考文献列表：必须在本章正文的最后，设立“### 参考文献与数据源”小节，按顺序排列。格式如下：
@@ -869,7 +961,8 @@ ${searchResults}`;
     try {
       const markdown = fs.readFileSync(filePath, 'utf8');
       const feishuUrl = feishuDocId ? `https://bytedance.feishu.cn/docx/${feishuDocId}` : undefined;
-      const htmlContent = generateHtmlReport(outline.report_title, markdown, feishuUrl);
+      const createdAt = db.prepare('SELECT created_at FROM tasks WHERE id = ?').get(taskId) as any;
+      const htmlContent = generateHtmlReport(outline.report_title, markdown, feishuUrl, createdAt?.created_at);
       htmlPath = filePath.replace('.md', '.html');
       fs.writeFileSync(htmlPath, htmlContent);
       broadcastLog(taskId, `🌐 交互式 HTML 报告已生成。`, 'success');
