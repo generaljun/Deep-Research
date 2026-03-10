@@ -280,44 +280,44 @@ export default function App() {
               <h2 className="text-lg font-bold text-slate-800 dark:text-cyan-50 transition-colors duration-500">AI 助手控制台</h2>
             </div>
           </div>
-          <div className="flex items-center gap-2 bg-slate-50/80 dark:bg-[#030712]/80 p-1.5 rounded-2xl border border-slate-100 dark:border-cyan-900/30 shadow-inner dark:shadow-none transition-colors duration-500">
+          <div className="flex items-center gap-1 md:gap-2 bg-slate-50/80 dark:bg-[#030712]/80 p-1.5 rounded-2xl border border-slate-100 dark:border-cyan-900/30 shadow-inner dark:shadow-none transition-colors duration-500 w-full md:w-auto overflow-x-auto [&::-webkit-scrollbar]:hidden">
             <button
               onClick={() => setActiveTab('generator')}
-              className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-300 flex items-center gap-2 ${
+              className={`px-3 py-1.5 md:px-5 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'generator' 
                   ? 'bg-white dark:bg-gradient-to-r dark:from-cyan-600 dark:to-blue-600 text-blue-600 dark:text-white shadow-sm border border-slate-100 dark:border-transparent' 
-                  : 'text-slate-500 dark:text-blue-500 dark:text-slate-500 dark:text-cyan-400/60 hover:text-slate-700 dark:hover:text-slate-600 dark:text-cyan-300 hover:bg-slate-100/50 dark:hover:bg-blue-100/20 dark:bg-cyan-900/20'
+                  : 'text-slate-500 dark:text-cyan-400/60 hover:text-slate-700 dark:hover:text-cyan-300 hover:bg-slate-100/50 dark:hover:bg-cyan-900/20'
               }`}
             >
-              <Zap className="w-4 h-4" />
+              <Zap className="w-3.5 h-3.5 md:w-4 md:h-4" />
               研究生成器
             </button>
             <button
               onClick={() => setActiveTab('reports')}
-              className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-300 flex items-center gap-2 ${
+              className={`px-3 py-1.5 md:px-5 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'reports' 
                   ? 'bg-white dark:bg-gradient-to-r dark:from-cyan-600 dark:to-blue-600 text-blue-600 dark:text-white shadow-sm border border-slate-100 dark:border-transparent' 
-                  : 'text-slate-500 dark:text-blue-500 dark:text-slate-500 dark:text-cyan-400/60 hover:text-slate-700 dark:hover:text-slate-600 dark:text-cyan-300 hover:bg-slate-100/50 dark:hover:bg-blue-100/20 dark:bg-cyan-900/20'
+                  : 'text-slate-500 dark:text-cyan-400/60 hover:text-slate-700 dark:hover:text-cyan-300 hover:bg-slate-100/50 dark:hover:bg-cyan-900/20'
               }`}
             >
-              <Archive className="w-4 h-4" />
+              <Archive className="w-3.5 h-3.5 md:w-4 md:h-4" />
               报告库
             </button>
             {user?.role === 'admin' && (
               <button
                 onClick={() => setActiveTab('admin')}
-                className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-300 flex items-center gap-2 ${
+                className={`px-3 py-1.5 md:px-5 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap ${
                   activeTab === 'admin' 
                     ? 'bg-white dark:bg-gradient-to-r dark:from-cyan-600 dark:to-blue-600 text-blue-600 dark:text-white shadow-sm border border-slate-100 dark:border-transparent' 
-                    : 'text-slate-500 dark:text-blue-500 dark:text-slate-500 dark:text-cyan-400/60 hover:text-slate-700 dark:hover:text-slate-600 dark:text-cyan-300 hover:bg-slate-100/50 dark:hover:bg-blue-100/20 dark:bg-cyan-900/20'
+                    : 'text-slate-500 dark:text-cyan-400/60 hover:text-slate-700 dark:hover:text-cyan-300 hover:bg-slate-100/50 dark:hover:bg-cyan-900/20'
                 }`}
               >
-                <Settings className="w-4 h-4" />
+                <Settings className="w-3.5 h-3.5 md:w-4 md:h-4" />
                 中枢控制台
               </button>
             )}
-            <div className="w-px h-6 bg-slate-200 dark:bg-blue-100/50 dark:bg-cyan-900/50 mx-1"></div>
-            <div className="flex items-center bg-slate-100/50 dark:bg-[#0a0a0a]/50 rounded-xl p-1">
+            <div className="hidden md:block w-px h-6 bg-slate-200 dark:bg-cyan-900/50 mx-1"></div>
+            <div className="flex items-center bg-slate-100/50 dark:bg-[#0a0a0a]/50 rounded-xl p-1 ml-auto md:ml-0 shrink-0">
               <button
                 onClick={() => setTheme('light')}
                 className={`p-1.5 rounded-lg transition-all ${theme === 'light' ? 'bg-white dark:bg-blue-100/50 dark:bg-cyan-900/50 text-amber-500 shadow-sm' : 'text-slate-400 dark:text-blue-400 dark:text-slate-400 dark:text-cyan-500/50 hover:text-slate-600 dark:hover:text-slate-600 dark:text-cyan-300'}`}
@@ -470,7 +470,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-      <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-8 md:p-10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+      <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-5 md:p-10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl"></div>
         <h2 className="text-2xl font-bold mb-8 flex items-center gap-3 text-slate-800 dark:text-cyan-50">
           <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-cyan-950 border border-blue-200 dark:border-cyan-500/30 flex items-center justify-center">
@@ -500,11 +500,11 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
                     <div className="text-xs text-blue-400 dark:text-slate-500 dark:text-cyan-500/60 mt-1 font-mono flex gap-3">
                       <span>课题: {r.topic}</span>
                       <span>•</span>
-                      <span>{new Date(r.created_at).toLocaleString()}</span>
+                      <span>{new Date(r.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</span>
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0 w-full md:w-auto mt-2 md:mt-0">
                   <a 
                     href={`/api/reports/${r.id}/view`}
                     target="_blank"
@@ -602,6 +602,16 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const stageContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (stageContainerRef.current) {
+      const activeStage = stageContainerRef.current.querySelector('.active-stage');
+      if (activeStage) {
+        activeStage.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    }
+  }, [conversationTurn, step]);
 
   useEffect(() => {
     if (!token) return;
@@ -892,7 +902,7 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
 
       {step === 2 && (
         <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-          <div className="flex flex-col h-[750px] bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl overflow-hidden backdrop-blur-xl shadow-2xl relative">
+          <div className="flex flex-col h-[calc(100dvh-120px)] md:h-[750px] bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl overflow-hidden backdrop-blur-xl shadow-2xl relative">
             
             {/* Top Progress Bar */}
             <div className="absolute top-0 left-0 w-full h-1 bg-blue-50 dark:bg-cyan-950">
@@ -916,12 +926,15 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
                 className="text-sm bg-blue-50/50 dark:bg-cyan-950/50 text-slate-600 dark:text-cyan-300 border border-blue-200 dark:border-cyan-500/30 px-4 py-2 rounded-xl hover:bg-blue-100/50 dark:bg-cyan-900/50 hover:border-blue-500 dark:hover:border-cyan-400 transition-all flex items-center gap-2 shadow-sm dark:shadow-[0_0_10px_rgba(6,182,212,0.1)]"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                {loading ? '正在编译大纲...' : '强制结束对话，生成大纲'}
+                {loading ? '正在编译大纲...' : (conversationTurn >= 5 ? '生成大纲' : '提前结束对话，生成大纲')}
               </button>
             </div>
 
             {/* Stage Visualization */}
-            <div className="px-6 py-4 bg-blue-50/10 dark:bg-cyan-950/10 border-b border-slate-100 dark:border-cyan-900/20 overflow-x-auto">
+            <div 
+              ref={stageContainerRef}
+              className="px-6 py-4 bg-blue-50/10 dark:bg-cyan-950/10 border-b border-slate-100 dark:border-cyan-900/20 overflow-x-auto scrollbar-hide"
+            >
               <div className="flex items-center justify-between min-w-[600px] gap-2">
                 {CHAT_STAGES.map((stage, idx) => {
                   const isActive = Math.max(1, conversationTurn) === stage.id;
@@ -929,7 +942,7 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
                   const Icon = stage.icon;
                   
                   return (
-                    <div key={stage.id} className="flex-1 flex flex-col items-center relative group">
+                    <div key={stage.id} className={`flex-1 flex flex-col items-center relative group ${isActive ? 'active-stage' : ''}`}>
                       {/* Connecting Line */}
                       {idx < CHAT_STAGES.length - 1 && (
                         <div className={`absolute top-5 left-[50%] w-full h-[2px] ${isPast ? 'bg-cyan-500/50' : 'bg-blue-100/30 dark:bg-cyan-900/30'}`}></div>
@@ -992,27 +1005,41 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
             </div>
 
             <div className="p-6 bg-slate-50 dark:bg-[#030712] border-t border-slate-100 dark:border-cyan-900/30">
-              <div className="relative group">
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 rounded-xl blur opacity-50 group-focus-within:opacity-100 transition duration-500"></div>
-                <div className="relative flex items-center bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-800/50 rounded-xl overflow-hidden">
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && input.trim() && sendMessage(input)}
-                    placeholder={conversationTurn >= 5 ? "对话已完成，请点击右上角生成大纲" : "输入你的补充要求..."}
-                    disabled={conversationTurn >= 5 || loading}
-                    className="w-full bg-transparent pl-5 pr-12 py-4 text-sm text-slate-800 dark:text-cyan-50 placeholder:text-blue-800 dark:text-cyan-800 focus:outline-none disabled:opacity-50"
-                  />
-                  <button
-                    onClick={() => input.trim() && sendMessage(input)}
-                    disabled={!input.trim() || loading || conversationTurn >= 5}
-                    className="absolute right-2 p-2.5 bg-blue-50 dark:bg-cyan-950 text-blue-500 dark:text-cyan-400 rounded-lg hover:bg-blue-100 dark:bg-cyan-900 hover:text-slate-600 dark:text-cyan-300 disabled:opacity-50 disabled:bg-transparent transition-all"
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
+              {conversationTurn >= 5 ? (
+                <button
+                  onClick={handleGenerateOutline}
+                  disabled={loading}
+                  className="w-full relative group overflow-hidden rounded-xl"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-blue-600 to-cyan-600 bg-[length:200%_auto] animate-gradient group-hover:bg-[length:100%_auto] transition-all duration-500"></div>
+                  <div className="relative px-4 py-4 flex items-center justify-center gap-3 text-white font-bold tracking-wide">
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}
+                    {loading ? '正在编译大纲...' : '完成对话，提交生成报告大纲'}
+                  </div>
+                </button>
+              ) : (
+                <div className="relative group">
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 rounded-xl blur opacity-50 group-focus-within:opacity-100 transition duration-500"></div>
+                  <div className="relative flex items-center bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-800/50 rounded-xl overflow-hidden">
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && input.trim() && sendMessage(input)}
+                      placeholder="输入你的补充要求..."
+                      disabled={loading}
+                      className="w-full bg-transparent pl-5 pr-12 py-4 text-sm text-slate-800 dark:text-cyan-50 placeholder:text-blue-800 dark:text-cyan-800 focus:outline-none disabled:opacity-50"
+                    />
+                    <button
+                      onClick={() => input.trim() && sendMessage(input)}
+                      disabled={!input.trim() || loading}
+                      className="absolute right-2 p-2.5 bg-blue-50 dark:bg-cyan-950 text-blue-500 dark:text-cyan-400 rounded-lg hover:bg-blue-100 dark:bg-cyan-900 hover:text-slate-600 dark:text-cyan-300 disabled:opacity-50 disabled:bg-transparent transition-all"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -1020,7 +1047,7 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
 
       {step === 3 && outline && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
-          <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-8 md:p-10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+          <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-5 md:p-10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
             {/* Decorative background */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl"></div>
             
@@ -1031,8 +1058,8 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
               研究大纲编译完成
             </h2>
             
-            <div className="bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-2xl p-8 mb-8 relative z-10 shadow-inner">
-              <h3 className="text-xl font-black text-transparent dark:text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 mb-8 pb-6 border-b border-slate-100 dark:border-cyan-900/30">
+            <div className="bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-2xl p-5 md:p-8 mb-6 md:mb-8 relative z-10 shadow-inner">
+              <h3 className="text-lg md:text-xl font-black text-transparent dark:text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 mb-6 md:mb-8 pb-4 md:pb-6 border-b border-slate-100 dark:border-cyan-900/30">
                 {outline.report_title}
               </h3>
               <div className="space-y-8">
@@ -1125,7 +1152,7 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
             )}
           </div>
           
-          <div className="h-[400px] overflow-y-auto p-6 font-mono text-xs md:text-sm space-y-3 bg-slate-50 dark:bg-[#030712] relative">
+          <div className="h-[50vh] md:h-[400px] overflow-y-auto p-4 md:p-6 font-mono text-xs md:text-sm space-y-3 bg-slate-50 dark:bg-[#030712] relative">
             {/* Terminal scanline effect */}
             <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] z-10"></div>
             
@@ -1214,6 +1241,7 @@ const TooltipLabel = ({ label, title, desc }: { label: string, title: string, de
 function AdminView({ token, settings, handleChange, setSettings, onLogout, isActive }: { token: string, settings: Record<string, string>, handleChange: (key: string, value: string) => void, setSettings: React.Dispatch<React.SetStateAction<Record<string, string>>>, onLogout: () => void, isActive: boolean }) {
   const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'logs' | 'system'>('settings');
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -1389,6 +1417,7 @@ function AdminView({ token, settings, handleChange, setSettings, onLogout, isAct
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveSuccess(false);
     try {
       await fetch('/api/settings', {
         method: 'POST',
@@ -1399,6 +1428,8 @@ function AdminView({ token, settings, handleChange, setSettings, onLogout, isAct
         body: JSON.stringify(settings)
       });
       showToast('配置已安全写入 SQLite 数据库！', 'success');
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
     } catch (e) {
       showToast('保存失败，请检查后端状态。', 'error');
     } finally {
@@ -1489,7 +1520,7 @@ const handleSearchChange = (searchName: string) => {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
-      <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-8 md:p-10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+      <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-5 md:p-10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl"></div>
         
         <div className="flex items-center justify-between mb-8 relative z-10">
@@ -1723,10 +1754,16 @@ const handleSearchChange = (searchName: string) => {
                             <div className="flex items-center gap-2">
                               <input 
                                 type="number" 
-                                defaultValue={u.quota} 
+                                value={u.quota ?? 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  if (!isNaN(val)) {
+                                    setUsers(users.map(user => user.id === u.id ? { ...user, quota: val } : user));
+                                  }
+                                }}
                                 onBlur={(e) => {
                                   const val = parseInt(e.target.value);
-                                  if (!isNaN(val) && val !== u.quota) handleUpdateQuota(u.id, val);
+                                  if (!isNaN(val)) handleUpdateQuota(u.id, val);
                                 }}
                                 className="w-16 bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded px-2 py-1 text-xs text-slate-700 dark:text-cyan-100 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-500 outline-none"
                                 min="0"
@@ -1734,7 +1771,7 @@ const handleSearchChange = (searchName: string) => {
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-blue-400 dark:text-slate-500 dark:text-cyan-500/70">{new Date(u.created_at).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-blue-400 dark:text-slate-500 dark:text-cyan-500/70">{new Date(u.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</td>
                         <td className="px-4 py-3 text-right">
                           {confirmState?.type === 'deleteUser' && confirmState.id === u.id ? (
                             <div className="flex items-center justify-end gap-1">
@@ -1756,13 +1793,19 @@ const handleSearchChange = (searchName: string) => {
 
           <button
             onClick={handleSave}
-            disabled={saving}
-            className="w-full relative group overflow-hidden rounded-xl mt-4"
+            disabled={saving || saveSuccess}
+            className={`w-full relative group overflow-hidden rounded-xl mt-4 transition-all duration-300 ${
+              saveSuccess ? 'scale-[0.98]' : 'hover:scale-[1.01]'
+            }`}
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-blue-600 to-cyan-600 bg-[length:200%_auto] animate-gradient group-hover:bg-[length:100%_auto] transition-all duration-500"></div>
+            <div className={`absolute inset-0 bg-gradient-to-r bg-[length:200%_auto] transition-all duration-500 ${
+              saveSuccess 
+                ? 'from-emerald-500 via-emerald-400 to-emerald-500' 
+                : 'from-cyan-600 via-blue-600 to-cyan-600 animate-gradient group-hover:bg-[length:100%_auto]'
+            }`}></div>
             <div className="relative px-4 py-4 flex items-center justify-center gap-2 text-white font-bold tracking-wide">
-              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
-              {saving ? '正在加密写入...' : '保存配置到本地 SQLite'}
+              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : saveSuccess ? <CheckCircle className="w-5 h-5" /> : <Database className="w-5 h-5" />}
+              {saving ? '正在加密写入...' : saveSuccess ? '配置已安全保存' : '保存配置到本地 SQLite'}
             </div>
           </button>
         </div>
@@ -1798,7 +1841,7 @@ const handleSearchChange = (searchName: string) => {
                       <div>
                         <div className="text-sm text-slate-700 dark:text-cyan-100 font-medium">{log.filename}</div>
                         <div className="text-xs text-blue-400 dark:text-slate-500 dark:text-cyan-500/60 mt-1">
-                          {new Date(log.createdAt).toLocaleString()} · {(log.size / 1024).toFixed(2)} KB
+                          {new Date(log.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} · {(log.size / 1024).toFixed(2)} KB
                         </div>
                       </div>
                     </div>

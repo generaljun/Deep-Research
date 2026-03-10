@@ -479,7 +479,9 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
   // Calculate word count (simplified: count characters excluding whitespace)
   const wordCount = markdown.replace(/\s+/g, '').length;
   const readingTime = Math.ceil(wordCount / 500); // Assume 500 chars per minute
-  const displayTime = createdAt ? new Date(createdAt).toLocaleString() : new Date().toLocaleString();
+  const displayTime = createdAt 
+    ? new Date(createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) 
+    : new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
 
   return `
 <!DOCTYPE html>
@@ -600,14 +602,43 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
     <script>
         function shareReport() {
             const url = window.location.href;
-            navigator.clipboard.writeText(url).then(() => {
+            const showToast = () => {
                 const toast = document.getElementById("toast");
                 toast.className = "show";
                 setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
-            }).catch(err => {
-                console.error('Copy failed:', err);
+            };
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(url).then(showToast).catch(err => {
+                    console.error('Copy failed:', err);
+                    fallbackCopyTextToClipboard(url, showToast);
+                });
+            } else {
+                fallbackCopyTextToClipboard(url, showToast);
+            }
+        }
+
+        function fallbackCopyTextToClipboard(text, onSuccess) {
+            var textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                var successful = document.execCommand('copy');
+                if (successful) {
+                    onSuccess();
+                } else {
+                    alert('复制链接失败，请手动复制浏览器地址栏链接。');
+                }
+            } catch (err) {
+                console.error('Fallback: Oops, unable to copy', err);
                 alert('复制链接失败，请手动复制浏览器地址栏链接。');
-            });
+            }
+            document.body.removeChild(textArea);
         }
 
         hljs.highlightAll();
@@ -823,7 +854,15 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 
     // 生成带时间戳的文件名: 用户名-报告名-生成时间.md
     const now = new Date();
-    const timeStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+    const formatter = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(now);
+    const p = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    const timeStr = `${p.year}${p.month}${p.day}_${p.hour}${p.minute}${p.second}`;
     const safeTitle = outline.report_title.replace(/[\/\\?%*:|"<>]/g, '-');
     filePath = path.join(reportsDir, `${user}-${safeTitle}-${timeStr}.md`);
 
