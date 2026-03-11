@@ -1754,16 +1754,16 @@ const handleSearchChange = (searchName: string) => {
                             <div className="flex items-center gap-2">
                               <input 
                                 type="number" 
-                                value={u.quota ?? 0}
+                                value={u.quota === null || u.quota === undefined ? 0 : u.quota}
                                 onChange={(e) => {
-                                  const val = parseInt(e.target.value);
-                                  if (!isNaN(val)) {
-                                    setUsers(users.map(user => user.id === u.id ? { ...user, quota: val } : user));
-                                  }
+                                  const val = e.target.value === '' ? '' : parseInt(e.target.value);
+                                  setUsers(users.map(user => user.id === u.id ? { ...user, quota: val } : user));
                                 }}
                                 onBlur={(e) => {
-                                  const val = parseInt(e.target.value);
-                                  if (!isNaN(val)) handleUpdateQuota(u.id, val);
+                                  let val = parseInt(e.target.value);
+                                  if (isNaN(val)) val = 0;
+                                  handleUpdateQuota(u.id, val);
+                                  setUsers(users.map(user => user.id === u.id ? { ...user, quota: val } : user));
                                 }}
                                 className="w-16 bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded px-2 py-1 text-xs text-slate-700 dark:text-cyan-100 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-500 outline-none"
                                 min="0"

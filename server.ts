@@ -131,6 +131,7 @@ try {
       salt TEXT,
       role TEXT,
       must_change_password INTEGER DEFAULT 0,
+      quota INTEGER DEFAULT 3,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS login_attempts (
@@ -150,6 +151,18 @@ try {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  
+  // Migration: add quota column if it doesn't exist
+  try {
+    const columns = db.prepare("PRAGMA table_info(users)").all() as any[];
+    if (!columns.find(c => c.name === 'quota')) {
+      db.exec("ALTER TABLE users ADD COLUMN quota INTEGER DEFAULT 3");
+      console.log("Migration: Added quota column to users table");
+    }
+  } catch (e) {
+    console.error("Migration error:", e);
+  }
+
   console.log('Database initialized successfully');
 } catch (err) {
   console.error('CRITICAL: Database initialization failed!');
@@ -1448,7 +1461,7 @@ app.post('/api/auth/login', (req, res) => {
     { expiresIn: '7d' }
   );
 
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role, mustChangePassword: user.must_change_password === 1 } });
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role, quota: user.quota, mustChangePassword: user.must_change_password === 1 } });
 });
 
 app.post('/api/auth/change-password', authenticateToken, (req: any, res: any) => {
@@ -1472,22 +1485,30 @@ app.post('/api/auth/change-password', authenticateToken, (req: any, res: any) =>
 
 // User Management API (Admin Only)
 app.get('/api/users', authenticateToken, requireAdmin, (req, res) => {
-  const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
+  const users = db.prepare('SELECT id, username, role, quota, created_at FROM users').all();
   res.json(users);
 });
 
 app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
-  const { username, password, role } = req.body;
+  const { username, password, role, quota } = req.body;
   try {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(password, salt);
-    db.prepare('INSERT INTO users (id, username, password_hash, salt, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(crypto.randomUUID(), username, hash, salt, role || 'user', 0);
+    db.prepare('INSERT INTO users (id, username, password_hash, salt, role, must_change_password, quota) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(crypto.randomUUID(), username, hash, salt, role || 'user', 0, quota !== undefined ? quota : 3);
     logger.info(`Admin created new user: ${username}`);
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: 'Username may already exist' });
   }
+});
+
+app.put('/api/users/:id/quota', authenticateToken, requireAdmin, (req: any, res: any) => {
+  const { quota } = req.body;
+  if (typeof quota !== 'number') return res.status(400).json({ error: 'Invalid quota' });
+  db.prepare('UPDATE users SET quota = ? WHERE id = ?').run(quota, req.params.id);
+  logger.info(`Admin updated quota for user ${req.params.id} to ${quota}`);
+  res.json({ success: true });
 });
 
 app.delete('/api/users/:id', authenticateToken, requireAdmin, (req: any, res: any) => {
