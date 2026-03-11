@@ -509,53 +509,40 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
-        body { font-family: 'Inter', 'Noto Sans SC', sans-serif; }
-        .prose { max-width: 65ch; margin: 0 auto; }
-        .prose h1 { font-size: 2.25rem; font-weight: 800; margin-top: 2rem; margin-bottom: 1rem; color: #111827; }
-        .prose h2 { font-size: 1.5rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.75rem; color: #1f2937; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
-        .prose h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: #374151; }
-        .prose p { margin-top: 1rem; margin-bottom: 1rem; line-height: 1.75; color: #4b5563; }
-        .prose ul { list-style-type: disc; padding-left: 1.5rem; margin-top: 1rem; margin-bottom: 1rem; }
-        .prose ol { list-style-type: decimal; padding-left: 1.5rem; margin-top: 1rem; margin-bottom: 1rem; }
-        .prose li { margin-top: 0.5rem; margin-bottom: 0.5rem; }
-        .prose table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; margin-bottom: 1.5rem; font-size: 0.875rem; }
-        .prose th { background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 0.75rem; text-align: left; font-weight: 600; }
-        .prose td { border: 1px solid #e5e7eb; padding: 0.75rem; }
-        .prose blockquote { border-left: 4px solid #3b82f6; padding-left: 1rem; font-style: italic; color: #6b7280; margin: 1.5rem 0; }
-        .prose pre { background-color: #1f2937; color: #f3f4f6; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 1.5rem 0; }
-        .prose code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.875em; }
-        .table-of-contents { background-color: #f3f4f6; padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 2rem; }
-        .table-of-contents ul { list-style-type: none; padding-left: 0; }
-        .table-of-contents li { margin-bottom: 0.5rem; }
-        .table-of-contents a { color: #2563eb; text-decoration: none; }
-        .table-of-contents a:hover { text-decoration: underline; }
-        .chart-container { margin: 2rem 0; padding: 1.5rem; background: white; border: 1px solid #e5e7eb; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
-        @media (max-width: 768px) { .prose { padding: 0 1rem; } }
+        :root { --bg-color: #f8fafc; --text-color: #1e293b; --card-bg: #ffffff; }
+        .dark-theme { --bg-color: #0f172a; --text-color: #f1f5f9; --card-bg: #1e293b; }
+        .sepia-theme { --bg-color: #fdf6e3; --text-color: #586e75; --card-bg: #eee8d5; }
         
-        /* Toast notification */
-        #toast {
-            visibility: hidden;
-            min-width: 250px;
-            margin-left: -125px;
-            background-color: #333;
-            color: #fff;
-            text-align: center;
-            border-radius: 8px;
-            padding: 16px;
-            position: fixed;
-            z-index: 1000;
-            left: 50%;
-            bottom: 30px;
-            font-size: 14px;
-        }
-        #toast.show {
-            visibility: visible;
-            -webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s;
-            animation: fadein 0.5s, fadeout 0.5s 2.5s;
-        }
-        @-webkit-keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
+        body { font-family: 'Inter', 'Noto Sans SC', sans-serif; background-color: var(--bg-color); color: var(--text-color); transition: all 0.3s ease; overflow-x: hidden; overscroll-behavior-x: none; }
+        html { overflow-x: hidden; }
+        .prose { max-width: 65ch; margin: 0 auto; }
+        .prose h1 { font-size: 2.25rem; font-weight: 800; margin-top: 2rem; margin-bottom: 1rem; color: inherit; }
+        .prose h2 { font-size: 1.5rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.75rem; color: inherit; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 0.5rem; }
+        .prose h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: inherit; }
+        .prose p { margin-top: 1rem; margin-bottom: 1rem; line-height: 1.75; color: inherit; opacity: 0.9; }
+        .prose table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; margin-bottom: 1.5rem; font-size: 0.875rem; background: var(--card-bg); }
+        .table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1.5rem 0; border-radius: 0.5rem; border: 1px solid rgba(0,0,0,0.1); }
+        .prose table { margin: 0; border: none; }
+        .chart-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 2rem 0; padding: 1rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid rgba(0,0,0,0.1); }
+        .chart-container { min-width: 600px; height: 400px; position: relative; }
+        .prose th { background-color: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); padding: 0.75rem; text-align: left; font-weight: 600; }
+        .prose td { border: 1px solid rgba(0,0,0,0.1); padding: 0.75rem; }
+        
+        #toc { position: fixed; left: 2rem; top: 6rem; width: 240px; max-height: calc(100vh - 8rem); overflow-y: auto; padding: 1rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid rgba(0,0,0,0.1); display: none; }
+        @media (min-width: 1280px) { #toc { display: block; } }
+        #toc ul { list-style: none; padding-left: 0; }
+        #toc li { margin-bottom: 0.5rem; font-size: 0.875rem; }
+        #toc a { color: inherit; opacity: 0.6; text-decoration: none; transition: opacity 0.2s; }
+        #toc a:hover { opacity: 1; color: #3b82f6; }
+        #toc .active { opacity: 1; color: #3b82f6; font-weight: 600; }
+
+        .controls { position: fixed; right: 2rem; bottom: 2rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 100; }
+        .control-btn { width: 3rem; height: 3rem; border-radius: 50%; background: var(--card-bg); border: 1px solid rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); transition: transform 0.2s; }
+        .control-btn:hover { transform: scale(1.1); }
+        
+        #toast { visibility: hidden; min-width: 250px; margin-left: -125px; background-color: #333; color: #fff; text-align: center; border-radius: 8px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; font-size: 14px; }
+        #toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
         @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
-        @-webkit-keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
         @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
     </style>
 </head>
@@ -577,87 +564,107 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
         </div>
     </nav>
 
+    <div id="toc">
+        <h3 class="text-xs font-bold uppercase tracking-wider mb-4 opacity-40">目录</h3>
+        <ul id="toc-list"></ul>
+    </div>
+
     <main class="max-w-4xl mx-auto px-4 pb-24">
         <header class="mb-12 text-center">
-            <h1 class="text-4xl md:text-5xl font-extrabold text-slate-900 mb-4">${title}</h1>
-            <div class="flex flex-wrap justify-center items-center gap-4 text-slate-500 text-sm">
-                <div class="flex items-center space-x-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    <span>生成时间: ${displayTime}</span>
-                </div>
+            <h1 class="text-4xl md:text-5xl font-extrabold mb-4">${title}</h1>
+            <div class="flex flex-wrap justify-center items-center gap-4 opacity-60 text-sm">
+                <span>生成时间: ${displayTime}</span>
                 <span>•</span>
-                <div class="flex items-center space-x-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    <span>全文共计: ${wordCount} 字</span>
-                </div>
+                <span>全文共计: ${wordCount} 字</span>
                 <span>•</span>
-                <div class="flex items-center space-x-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    <span>预计阅读: ${readingTime} 分钟</span>
-                </div>
+                <span>预计阅读: ${readingTime} 分钟</span>
             </div>
         </header>
 
-        <div class="prose prose-slate lg:prose-xl">
+        <div id="report-content" class="prose prose-slate lg:prose-xl">
             ${content}
         </div>
     </main>
 
+    <div class="controls">
+        <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="control-btn" title="回到顶部">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+        </button>
+        <button onclick="toggleTheme()" class="control-btn" title="切换主题">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        </button>
+        <button onclick="changeFontSize(1)" class="control-btn" title="放大字体">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 15 7-7 7 7"/></svg>
+        </button>
+        <button onclick="changeFontSize(-1)" class="control-btn" title="缩小字体">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 9-7 7-7-7"/></svg>
+        </button>
+    </div>
+
     <div id="toast">链接已成功复制到剪贴板</div>
 
-    <footer class="bg-white border-t border-slate-200 py-12">
-        <div class="max-w-4xl mx-auto px-4 text-center text-slate-500 text-sm">
+    <footer class="bg-white/50 border-t border-slate-200 py-12">
+        <div class="max-w-4xl mx-auto px-4 text-center opacity-50 text-sm">
             <p>© ${new Date().getFullYear()} Deep Research Web. All rights reserved.</p>
             <p class="mt-2">本报告内容由 AI 生成，仅供参考，不代表任何投资建议。</p>
         </div>
     </footer>
 
     <script>
+        // TOC Generation
+        const content = document.getElementById('report-content');
+        const tocList = document.getElementById('toc-list');
+        const headings = content.querySelectorAll('h2, h3');
+        
+        headings.forEach((heading, index) => {
+            const id = 'heading-' + index;
+            heading.id = id;
+            const li = document.createElement('li');
+            li.className = heading.tagName === 'H3' ? 'pl-4' : '';
+            const a = document.createElement('a');
+            a.href = '#' + id;
+            a.textContent = heading.textContent;
+            li.appendChild(a);
+            tocList.appendChild(li);
+        });
+
+        // Theme Toggle
+        let currentTheme = 0; // 0: light, 1: dark, 2: sepia
+        function toggleTheme() {
+            currentTheme = (currentTheme + 1) % 3;
+            document.body.classList.remove('dark-theme', 'sepia-theme');
+            if (currentTheme === 1) document.body.classList.add('dark-theme');
+            if (currentTheme === 2) document.body.classList.add('sepia-theme');
+        }
+
+        // Font Size
+        let baseSize = 18;
+        function changeFontSize(delta) {
+            baseSize = Math.max(12, Math.min(32, baseSize + delta * 2));
+            content.style.fontSize = baseSize + 'px';
+        }
+
         function shareReport() {
             const url = window.location.href;
-            const showToast = () => {
-                const toast = document.getElementById("toast");
+            const toast = document.getElementById("toast");
+            navigator.clipboard.writeText(url).then(() => {
                 toast.className = "show";
-                setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
-            };
-
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(url).then(showToast).catch(err => {
-                    console.error('Copy failed:', err);
-                    fallbackCopyTextToClipboard(url, showToast);
-                });
-            } else {
-                fallbackCopyTextToClipboard(url, showToast);
-            }
+                setTimeout(() => { toast.className = ""; }, 3000);
+            });
         }
-
-        function fallbackCopyTextToClipboard(text, onSuccess) {
-            var textArea = document.createElement("textarea");
-            textArea.value = text;
-            textArea.style.top = "0";
-            textArea.style.left = "0";
-            textArea.style.position = "fixed";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            try {
-                var successful = document.execCommand('copy');
-                if (successful) {
-                    onSuccess();
-                } else {
-                    alert('复制链接失败，请手动复制浏览器地址栏链接。');
-                }
-            } catch (err) {
-                console.error('Fallback: Oops, unable to copy', err);
-                alert('复制链接失败，请手动复制浏览器地址栏链接。');
-            }
-            document.body.removeChild(textArea);
-        }
-
+        
         hljs.highlightAll();
+    </script>
 
+    <script>
         // 自动识别表格并生成图表
         document.querySelectorAll('table').forEach((table, index) => {
+            // Wrap table for horizontal scroll
+            const wrapper = document.createElement('div');
+            wrapper.className = 'table-wrapper';
+            table.parentNode.insertBefore(wrapper, table);
+            wrapper.appendChild(table);
+
             const rows = Array.from(table.querySelectorAll('tr'));
             if (rows.length < 2) return;
 
@@ -706,15 +713,17 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
             }
 
             if (numericCols.length > 0) {
+                const chartWrapper = document.createElement('div');
+                chartWrapper.className = 'chart-wrapper';
+                
                 const container = document.createElement('div');
                 container.className = 'chart-container';
-                container.style.height = '400px';
-                container.style.position = 'relative';
                 
                 const canvas = document.createElement('canvas');
                 canvas.id = 'chart-' + index;
                 container.appendChild(canvas);
-                table.parentNode.insertBefore(container, table.nextSibling);
+                chartWrapper.appendChild(container);
+                wrapper.parentNode.insertBefore(chartWrapper, wrapper.nextSibling);
 
                 // 预设一些好看的颜色组合 (Tailwind 风格)
                 const colors = [
@@ -1578,7 +1587,12 @@ app.get('/api/reports/:id/view', (req, res) => {
     const report = db.prepare('SELECT html_path FROM reports WHERE id = ?').get(req.params.id) as any;
     if (report && report.html_path && fs.existsSync(report.html_path)) {
       res.setHeader('Content-Type', 'text/html');
-      res.send(fs.readFileSync(report.html_path, 'utf8'));
+      let html = fs.readFileSync(report.html_path, 'utf8');
+      // Inject CSS fixes for older reports that don't have them
+      if (!html.includes('overscroll-behavior-x: none;')) {
+        html = html.replace('</head>', '<style>body, html { overflow-x: hidden; overscroll-behavior-x: none; }</style></head>');
+      }
+      res.send(html);
     } else {
       res.status(404).send('Report not found');
     }
@@ -1675,7 +1689,7 @@ app.get('/api/research/:id/stream', (req, res) => {
   res.flushHeaders();
 
   const onLog = (data: string) => res.write(`data: ${data}\n\n`);
-  const onDone = () => res.write(`event: done\ndata: {}\n\n`);
+  const onDone = (data: string = "{}") => res.write(`event: done\ndata: ${data}\n\n`);
 
   taskEvents.on(`log-${taskId}`, onLog);
   taskEvents.on(`done-${taskId}`, onDone);

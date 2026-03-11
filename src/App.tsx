@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info, Trash2, Github, Eye, EyeOff } from 'lucide-react';
 import SetupWizard from './SetupWizard';
 import AnimationDemo from './AnimationDemo';
@@ -99,6 +100,12 @@ export default function App() {
   const [isInitialized, setIsInitialized] = useState<boolean | null>(null);
   const [taskStatus, setTaskStatus] = useState<{ running: any, queue: any[] } | null>(null);
   const [isDemoOpen, setIsDemoOpen] = useState(false);
+  const [showCursor, setShowCursor] = useState(() => {
+    const saved = localStorage.getItem('showCursor');
+    if (saved !== null) return saved === 'true';
+    // Default: true on desktop, false on mobile
+    return window.innerWidth > 768;
+  });
   const [selectedVendor, setSelectedVendor] = useState(AI_VENDORS[0].name);
   const [selectedSearch, setSelectedSearch] = useState(SEARCH_PROVIDERS[0].name);
   const [settings, setSettings] = useState<Record<string, string>>({
@@ -176,6 +183,10 @@ export default function App() {
     }
   }, [theme]);
 
+  useEffect(() => {
+    localStorage.setItem('showCursor', showCursor.toString());
+  }, [showCursor]);
+
   const handleLogin = (newToken: string, userData: any) => {
     localStorage.setItem('token', newToken);
     localStorage.setItem('user', JSON.stringify(userData));
@@ -204,7 +215,8 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] dark:bg-[#030712] text-slate-800 dark:text-cyan-50 font-sans selection:bg-blue-200 dark:selection:bg-cyan-500/30 relative overflow-hidden transition-colors duration-500">
+    <div className="min-h-screen bg-[#f8f9fa] dark:bg-[#030712] text-slate-800 dark:text-cyan-50 font-sans selection:bg-blue-200 dark:selection:bg-cyan-500/30 relative overflow-hidden transition-colors duration-500 pb-20 md:pb-0">
+      {showCursor && <MagneticCursor />}
       {/* Task Progress Bar */}
       {taskStatus && (taskStatus.running || taskStatus.queue.length > 0) && (
         <div className="fixed bottom-0 left-0 w-full bg-white/90 dark:bg-[#0a0a0a]/90 border-t border-slate-200 dark:border-cyan-900/50 p-4 z-[100] backdrop-blur-md">
@@ -317,6 +329,15 @@ export default function App() {
               </button>
             )}
             <div className="hidden md:block w-px h-6 bg-slate-200 dark:bg-cyan-900/50 mx-1"></div>
+            
+            <button
+              onClick={() => setShowCursor(!showCursor)}
+              title={showCursor ? "禁用磁性光标" : "启用磁性光标"}
+              className="p-2 rounded-xl bg-slate-100/50 dark:bg-cyan-950/30 border border-slate-100 dark:border-cyan-900/30 text-slate-500 dark:text-cyan-400 hover:text-blue-500 dark:hover:text-cyan-300 transition-all hidden md:block"
+            >
+              <Monitor className="w-4 h-4" />
+            </button>
+
             <div className="flex items-center bg-slate-100/50 dark:bg-[#0a0a0a]/50 rounded-xl p-1 ml-auto md:ml-0 shrink-0">
               <button
                 onClick={() => setTheme('light')}
@@ -480,8 +501,22 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
         </h2>
 
         {loading ? (
-          <div className="flex items-center justify-center py-12 text-blue-400 dark:text-slate-500 dark:text-cyan-500/60">
-            <Loader2 className="w-6 h-6 animate-spin" />
+          <div className="grid gap-4 relative z-10">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-slate-50/50 dark:bg-slate-900/20 border border-slate-100 dark:border-cyan-900/20 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-pulse">
+                <div className="flex items-start gap-4 w-full">
+                  <div className="w-10 h-10 rounded-lg bg-slate-200 dark:bg-cyan-950/50 shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-5 bg-slate-200 dark:bg-cyan-900/50 rounded w-3/4" />
+                    <div className="h-3 bg-slate-100 dark:bg-cyan-950/30 rounded w-1/2" />
+                  </div>
+                </div>
+                <div className="flex gap-2 w-full md:w-auto">
+                  <div className="h-10 bg-slate-200 dark:bg-cyan-900/50 rounded-xl w-24" />
+                  <div className="h-10 bg-slate-200 dark:bg-cyan-900/50 rounded-xl w-24" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : reports.length === 0 ? (
           <div className="text-center py-12 text-blue-400 dark:text-slate-500 dark:text-cyan-500/60 border border-dashed border-slate-200 dark:border-cyan-900/50 rounded-2xl">
@@ -588,6 +623,15 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
   const [length, setLength] = useState('5000-8000');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [input]);
+
   const [loading, setLoading] = useState(false);
   const [outline, setOutline] = useState<Outline | null>(null);
   const [status, setStatus] = useState<'idle' | 'generating' | 'done'>('idle');
@@ -683,6 +727,14 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
     setStep(2);
     sendMessage(initialMsg);
   };
+
+  const TOPIC_TEMPLATES = [
+    "2026年氢动力无人机的最新进展",
+    "全球半导体供应链重构观察",
+    "中国AI大模型行业研究报告",
+    "低空经济：eVTOL商业化路径分析",
+    "合成生物学在医疗领域的应用前景"
+  ];
 
   const sendMessage = async (text: string) => {
     setLoading(true);
@@ -802,9 +854,28 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
         </div>
       )}
       {currentUser?.role !== 'admin' && (
-        <div className="bg-blue-100/20 dark:bg-cyan-900/20 border border-blue-200 dark:border-cyan-500/30 rounded-xl p-4 flex items-center justify-between text-slate-700 dark:text-cyan-100">
-          <span className="flex items-center gap-2"><Database className="w-4 h-4 text-blue-500 dark:text-cyan-400" /> 您的剩余生成额度</span>
-          <span className="font-bold text-xl text-blue-500 dark:text-cyan-400">{currentUser?.quota}</span>
+        <div className="bg-blue-100/10 dark:bg-cyan-900/10 border border-blue-200/50 dark:border-cyan-500/20 rounded-2xl p-4 flex items-center gap-3 text-slate-700 dark:text-cyan-100 shadow-sm backdrop-blur-sm">
+          <div className="flex items-center gap-2 text-sm font-medium opacity-80">
+            <Database className="w-4 h-4 text-blue-500 dark:text-cyan-400" /> 
+            您的剩余生成额度
+          </div>
+          <motion.div 
+            animate={{ 
+              scale: [1, 1.1, 1],
+              rotate: [0, 2, -2, 0],
+            }}
+            transition={{ 
+              duration: 3,
+              repeat: Infinity,
+              ease: "easeInOut"
+            }}
+            className="flex items-baseline gap-1"
+          >
+            <span className="font-black text-4xl text-transparent bg-clip-text bg-gradient-to-br from-blue-500 to-indigo-600 dark:from-cyan-400 dark:to-blue-500 drop-shadow-sm">
+              {currentUser?.quota}
+            </span>
+            <span className="text-xs font-bold opacity-40">次</span>
+          </motion.div>
         </div>
       )}
       {step === 1 && (
@@ -842,6 +913,17 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
                       <span className="w-1.5 h-1.5 rounded-full bg-cyan-500/60 animate-pulse delay-75"></span>
                       <span className="w-1.5 h-1.5 rounded-full bg-cyan-500/80 animate-pulse delay-150"></span>
                     </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {TOPIC_TEMPLATES.map(t => (
+                      <button
+                        key={t}
+                        onClick={() => setTopic(t)}
+                        className="text-[10px] bg-slate-100 dark:bg-cyan-950/30 text-slate-500 dark:text-cyan-400/60 px-2 py-1 rounded-md hover:bg-blue-50 dark:hover:bg-cyan-900/50 hover:text-blue-500 dark:hover:text-cyan-300 transition-all border border-slate-200 dark:border-cyan-900/20"
+                      >
+                        {t}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -920,14 +1002,16 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
                 </h2>
                 <p className="text-xs text-blue-500 dark:text-slate-500 dark:text-cyan-400/60 mt-1">AI 正在通过多轮对话锚定研究边界</p>
               </div>
-              <button
-                onClick={handleGenerateOutline}
-                disabled={loading}
-                className="text-sm bg-blue-50/50 dark:bg-cyan-950/50 text-slate-600 dark:text-cyan-300 border border-blue-200 dark:border-cyan-500/30 px-4 py-2 rounded-xl hover:bg-blue-100/50 dark:bg-cyan-900/50 hover:border-blue-500 dark:hover:border-cyan-400 transition-all flex items-center gap-2 shadow-sm dark:shadow-[0_0_10px_rgba(6,182,212,0.1)]"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                {loading ? '正在编译大纲...' : (conversationTurn >= 5 ? '生成大纲' : '提前结束对话，生成大纲')}
-              </button>
+              <div className="flex gap-2 w-full md:w-auto">
+                <button
+                  onClick={handleGenerateOutline}
+                  disabled={loading}
+                  className="flex-1 md:flex-none text-sm bg-blue-50/50 dark:bg-cyan-950/50 text-slate-600 dark:text-cyan-300 border border-blue-200 dark:border-cyan-500/30 px-4 py-2 rounded-xl hover:bg-blue-100/50 dark:bg-cyan-900/50 hover:border-blue-500 dark:hover:border-cyan-400 transition-all flex items-center justify-center gap-2 shadow-sm dark:shadow-[0_0_10px_rgba(6,182,212,0.1)]"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                  {loading ? '正在编译大纲...' : (conversationTurn >= 5 ? '生成大纲' : '跳过对话，直接生成大纲')}
+                </button>
+              </div>
             </div>
 
             {/* Stage Visualization */}
@@ -1020,20 +1104,26 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
               ) : (
                 <div className="relative group">
                   <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 rounded-xl blur opacity-50 group-focus-within:opacity-100 transition duration-500"></div>
-                  <div className="relative flex items-center bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-800/50 rounded-xl overflow-hidden">
-                    <input
-                      type="text"
+                  <div className="relative flex items-start bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-800/50 rounded-xl overflow-hidden">
+                    <textarea
+                      ref={textareaRef}
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && input.trim() && sendMessage(input)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          if (input.trim() && !loading) sendMessage(input);
+                        }
+                      }}
                       placeholder="输入你的补充要求..."
                       disabled={loading}
-                      className="w-full bg-transparent pl-5 pr-12 py-4 text-sm text-slate-800 dark:text-cyan-50 placeholder:text-blue-800 dark:text-cyan-800 focus:outline-none disabled:opacity-50"
+                      rows={1}
+                      className="w-full bg-transparent pl-5 pr-12 py-4 text-sm text-slate-800 dark:text-cyan-50 placeholder:text-blue-800 dark:text-cyan-800 focus:outline-none disabled:opacity-50 resize-none overflow-hidden"
                     />
                     <button
                       onClick={() => input.trim() && sendMessage(input)}
                       disabled={!input.trim() || loading}
-                      className="absolute right-2 p-2.5 bg-blue-50 dark:bg-cyan-950 text-blue-500 dark:text-cyan-400 rounded-lg hover:bg-blue-100 dark:bg-cyan-900 hover:text-slate-600 dark:text-cyan-300 disabled:opacity-50 disabled:bg-transparent transition-all"
+                      className="absolute right-2 bottom-2 p-2.5 bg-blue-50 dark:bg-cyan-950 text-blue-500 dark:text-cyan-400 rounded-lg hover:bg-blue-100 dark:bg-cyan-900 hover:text-slate-600 dark:text-cyan-300 disabled:opacity-50 disabled:bg-transparent transition-all"
                     >
                       <Send className="w-4 h-4" />
                     </button>
@@ -1059,18 +1149,37 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
             </h2>
             
             <div className="bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-2xl p-5 md:p-8 mb-6 md:mb-8 relative z-10 shadow-inner">
-              <h3 className="text-lg md:text-xl font-black text-transparent dark:text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 mb-6 md:mb-8 pb-4 md:pb-6 border-b border-slate-100 dark:border-cyan-900/30">
-                {outline.report_title}
-              </h3>
+              <input 
+                value={outline.report_title}
+                onChange={(e) => setOutline({...outline, report_title: e.target.value})}
+                className="w-full bg-transparent text-lg md:text-xl font-black text-blue-600 dark:text-cyan-400 mb-6 md:mb-8 pb-4 md:pb-6 border-b border-slate-100 dark:border-cyan-900/30 outline-none focus:border-blue-500"
+              />
               <div className="space-y-8">
-                {outline.chapters.map((ch) => (
+                {outline.chapters.map((ch, idx) => (
                   <div key={ch.chapter_num} className="flex gap-5 group">
                     <div className="w-10 h-10 rounded-xl bg-blue-50/50 dark:bg-cyan-950/50 border border-slate-200 dark:border-cyan-800 flex items-center justify-center text-sm font-black text-blue-400 dark:text-cyan-500 shrink-0 group-hover:bg-blue-100 dark:bg-cyan-900 group-hover:border-blue-500 dark:border-cyan-500 transition-all shadow-[0_0_10px_rgba(6,182,212,0.05)]">
                       {String(ch.chapter_num).padStart(2, '0')}
                     </div>
-                    <div>
-                      <h4 className="font-bold text-slate-700 dark:text-cyan-100 mb-2 text-lg group-hover:text-slate-600 dark:text-cyan-300 transition-colors">{ch.chapter_title}</h4>
-                      <p className="text-sm text-blue-400 dark:text-slate-500 dark:text-cyan-500/70 leading-relaxed">{ch.core_points}</p>
+                    <div className="flex-1 space-y-2">
+                      <input 
+                        value={ch.chapter_title}
+                        onChange={(e) => {
+                          const newChapters = [...outline.chapters];
+                          newChapters[idx].chapter_title = e.target.value;
+                          setOutline({...outline, chapters: newChapters});
+                        }}
+                        className="w-full bg-transparent font-bold text-slate-700 dark:text-cyan-100 text-lg outline-none focus:text-blue-500"
+                      />
+                      <textarea 
+                        value={ch.core_points}
+                        onChange={(e) => {
+                          const newChapters = [...outline.chapters];
+                          newChapters[idx].core_points = e.target.value;
+                          setOutline({...outline, chapters: newChapters});
+                        }}
+                        rows={2}
+                        className="w-full bg-transparent text-sm text-blue-400 dark:text-slate-500 dark:text-cyan-500/70 leading-relaxed outline-none focus:text-slate-400 resize-none"
+                      />
                     </div>
                   </div>
                 ))}
@@ -1133,23 +1242,59 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
 
       {(status === 'generating' || status === 'done' || taskId) && (
         <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl overflow-hidden backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-700">
-          <div className="p-5 border-b border-slate-100 dark:border-cyan-900/30 bg-slate-50 dark:bg-[#030712] flex justify-between items-center">
-            <h2 className="font-bold flex items-center gap-3 text-sm text-slate-700 dark:text-cyan-100">
-              <Server className="w-5 h-5 text-blue-400 dark:text-cyan-500" />
-              系统执行终端 (Terminal)
-            </h2>
-            {status === 'generating' && (
-              <span className="flex items-center gap-2 text-xs font-mono text-blue-500 dark:text-cyan-400 bg-blue-50/50 dark:bg-cyan-950/50 border border-slate-200 dark:border-cyan-800 px-3 py-1.5 rounded-lg">
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-                PROCESSING
-              </span>
-            )}
-            {status === 'done' && (
-              <span className="flex items-center gap-2 text-xs font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-950/50 border border-emerald-800 px-3 py-1.5 rounded-lg">
-                <CheckCircle className="w-3 h-3" />
-                COMPLETED
-              </span>
-            )}
+          <div className="p-5 border-b border-slate-100 dark:border-cyan-900/30 bg-slate-50 dark:bg-[#030712] flex flex-col gap-4">
+            <div className="flex justify-between items-center">
+              <h2 className="font-bold flex items-center gap-3 text-sm text-slate-700 dark:text-cyan-100">
+                <Server className="w-5 h-5 text-blue-400 dark:text-cyan-500" />
+                系统执行终端 (Terminal)
+              </h2>
+              <div className="flex items-center gap-2">
+                {status === 'generating' && (
+                  <span className="flex items-center gap-2 text-xs font-mono text-blue-500 dark:text-cyan-400 bg-blue-50/50 dark:bg-cyan-950/50 border border-slate-200 dark:border-cyan-800 px-3 py-1.5 rounded-lg">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                    PROCESSING
+                  </span>
+                )}
+                {status === 'done' && (
+                  <span className="flex items-center gap-2 text-xs font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-950/50 border border-emerald-800 px-3 py-1.5 rounded-lg">
+                    <CheckCircle className="w-3 h-3" />
+                    COMPLETED
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Progress Timeline */}
+            <div className="flex items-center gap-2 px-2 py-4 overflow-x-auto scrollbar-hide">
+              {[
+                { label: '搜索素材', icon: Network, progress: 20 },
+                { label: '逻辑建模', icon: Cpu, progress: 40 },
+                { label: '撰写章节', icon: FileText, progress: 80 },
+                { label: '同步飞书', icon: Send, progress: 95 },
+                { label: '本地写入', icon: Database, progress: 100 }
+              ].map((step, idx, arr) => {
+                const isPast = (systemStatus?.currentTask?.progress || 0) >= step.progress;
+                const isCurrent = (systemStatus?.currentTask?.progress || 0) < step.progress && (idx === 0 || (systemStatus?.currentTask?.progress || 0) >= arr[idx-1].progress);
+                
+                return (
+                  <React.Fragment key={step.label}>
+                    <div className="flex flex-col items-center gap-2 shrink-0">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-500 ${
+                        isPast ? 'bg-blue-500 border-blue-500 text-white' : 
+                        isCurrent ? 'bg-blue-100 dark:bg-cyan-900 border-blue-500 text-blue-600 dark:text-cyan-400 animate-pulse' : 
+                        'bg-slate-100 dark:bg-cyan-950 border-slate-200 dark:border-cyan-900 text-slate-400 dark:text-cyan-800'
+                      }`}>
+                        <step.icon className="w-4 h-4" />
+                      </div>
+                      <span className={`text-[10px] font-bold ${isPast ? 'text-blue-600 dark:text-cyan-400' : 'text-slate-400 dark:text-cyan-900'}`}>{step.label}</span>
+                    </div>
+                    {idx < arr.length - 1 && (
+                      <div className={`w-8 h-[2px] mb-6 ${isPast ? 'bg-blue-500' : 'bg-slate-200 dark:bg-cyan-900'}`}></div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
           </div>
           
           <div className="h-[50vh] md:h-[400px] overflow-y-auto p-4 md:p-6 font-mono text-xs md:text-sm space-y-3 bg-slate-50 dark:bg-[#030712] relative">
@@ -1191,6 +1336,13 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
                   <span className="text-emerald-400 font-bold text-sm">系统指令：任务已就绪，请选择操作</span>
                 </div>
                 <div className="flex flex-wrap gap-3">
+                  <button 
+                    onClick={() => setActiveTab('reports')}
+                    className="px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/50 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                    查看报告库
+                  </button>
                   {reportUrls?.webUrl && (
                     <a 
                       href={reportUrls.webUrl}
