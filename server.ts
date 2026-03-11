@@ -509,36 +509,64 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
-        :root { --bg-color: #f8fafc; --text-color: #1e293b; --card-bg: #ffffff; }
-        .dark-theme { --bg-color: #0f172a; --text-color: #f1f5f9; --card-bg: #1e293b; }
-        .sepia-theme { --bg-color: #fdf6e3; --text-color: #586e75; --card-bg: #eee8d5; }
+        :root { 
+            --bg-color: #f8fafc; 
+            --text-color: #1e293b; 
+            --card-bg: #ffffff; 
+            --border-color: rgba(0,0,0,0.1);
+            --table-header-bg: rgba(0,0,0,0.05);
+            --link-color: #3b82f6;
+            --toc-active-bg: rgba(59, 130, 246, 0.1);
+        }
+        .dark-theme { 
+            --bg-color: #0f172a; 
+            --text-color: #f1f5f9; 
+            --card-bg: #1e293b; 
+            --border-color: rgba(255,255,255,0.1);
+            --table-header-bg: rgba(255,255,255,0.05);
+            --link-color: #60a5fa;
+            --toc-active-bg: rgba(96, 165, 250, 0.15);
+        }
+        .sepia-theme { 
+            --bg-color: #fdf6e3; 
+            --text-color: #586e75; 
+            --card-bg: #eee8d5; 
+            --border-color: rgba(88,110,117,0.2);
+            --table-header-bg: rgba(88,110,117,0.1);
+            --link-color: #268bd2;
+            --toc-active-bg: rgba(38, 139, 210, 0.15);
+        }
         
         body { font-family: 'Inter', 'Noto Sans SC', sans-serif; background-color: var(--bg-color); color: var(--text-color); transition: all 0.3s ease; overflow-x: hidden; overscroll-behavior-x: none; }
         html { overflow-x: hidden; }
         .prose { max-width: 65ch; margin: 0 auto; }
         .prose h1 { font-size: 2.25rem; font-weight: 800; margin-top: 2rem; margin-bottom: 1rem; color: inherit; }
-        .prose h2 { font-size: 1.5rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.75rem; color: inherit; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 0.5rem; }
+        .prose h2 { font-size: 1.5rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.75rem; color: inherit; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
         .prose h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: inherit; }
         .prose p { margin-top: 1rem; margin-bottom: 1rem; line-height: 1.75; color: inherit; opacity: 0.9; }
-        .prose table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; margin-bottom: 1.5rem; font-size: 0.875rem; background: var(--card-bg); }
-        .table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1.5rem 0; border-radius: 0.5rem; border: 1px solid rgba(0,0,0,0.1); }
+        .prose table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; margin-bottom: 1.5rem; font-size: 0.875rem; background: var(--card-bg); color: var(--text-color); }
+        .table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1.5rem 0; border-radius: 0.5rem; border: 1px solid var(--border-color); }
         .prose table { margin: 0; border: none; }
-        .chart-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 2rem 0; padding: 1rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid rgba(0,0,0,0.1); }
+        .chart-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 2rem 0; padding: 1rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid var(--border-color); }
         .chart-container { min-width: 600px; height: 400px; position: relative; }
-        .prose th { background-color: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); padding: 0.75rem; text-align: left; font-weight: 600; }
-        .prose td { border: 1px solid rgba(0,0,0,0.1); padding: 0.75rem; }
+        .prose th { background-color: var(--table-header-bg); border: 1px solid var(--border-color); padding: 0.75rem; text-align: left; font-weight: 600; color: var(--text-color); }
+        .prose td { border: 1px solid var(--border-color); padding: 0.75rem; color: var(--text-color); }
         
-        #toc { position: fixed; left: 2rem; top: 6rem; width: 240px; max-height: calc(100vh - 8rem); overflow-y: auto; padding: 1rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid rgba(0,0,0,0.1); display: none; }
+        #toc { position: fixed; left: 2rem; top: 6rem; width: 280px; max-height: calc(100vh - 8rem); overflow-y: auto; padding: 1.5rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid var(--border-color); display: none; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); scrollbar-width: thin; }
         @media (min-width: 1280px) { #toc { display: block; } }
-        #toc ul { list-style: none; padding-left: 0; }
-        #toc li { margin-bottom: 0.5rem; font-size: 0.875rem; }
-        #toc a { color: inherit; opacity: 0.6; text-decoration: none; transition: opacity 0.2s; }
-        #toc a:hover { opacity: 1; color: #3b82f6; }
-        #toc .active { opacity: 1; color: #3b82f6; font-weight: 600; }
+        #toc ul { list-style: none; padding-left: 0; margin: 0; }
+        #toc li { margin-bottom: 0.25rem; font-size: 0.875rem; line-height: 1.4; }
+        #toc a { display: block; padding: 0.4rem 0.75rem; color: var(--text-color); opacity: 0.7; text-decoration: none; transition: all 0.2s; border-radius: 0.375rem; border-left: 2px solid transparent; }
+        #toc a:hover { opacity: 1; background: var(--table-header-bg); }
+        #toc a.active { opacity: 1; color: var(--link-color); font-weight: 600; background: var(--toc-active-bg); border-left-color: var(--link-color); }
+        #toc .toc-h2 { font-weight: 500; margin-top: 0.5rem; }
+        #toc .toc-h3 { padding-left: 1.5rem; font-size: 0.8rem; opacity: 0.8; }
 
         .controls { position: fixed; right: 2rem; bottom: 2rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 100; }
-        .control-btn { width: 3rem; height: 3rem; border-radius: 50%; background: var(--card-bg); border: 1px solid rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); transition: transform 0.2s; }
-        .control-btn:hover { transform: scale(1.1); }
+        .control-btn { position: relative; width: 3rem; height: 3rem; border-radius: 50%; background: var(--card-bg); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); transition: all 0.2s; color: var(--text-color); }
+        .control-btn:hover { transform: scale(1.1); background: var(--table-header-bg); }
+        .control-btn::before { content: attr(data-tooltip); position: absolute; right: 100%; top: 50%; transform: translateY(-50%); margin-right: 10px; background: var(--text-color); color: var(--bg-color); padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; font-weight: 500; }
+        .control-btn:hover::before { opacity: 1; }
         
         #toast { visibility: hidden; min-width: 250px; margin-left: -125px; background-color: #333; color: #fff; text-align: center; border-radius: 8px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; font-size: 14px; }
         #toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
@@ -584,20 +612,35 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
         <div id="report-content" class="prose prose-slate lg:prose-xl">
             ${content}
         </div>
+
+        <div class="mt-16 pt-8 border-t border-[var(--border-color)] flex flex-col sm:flex-row items-center justify-center gap-4">
+            <a href="/?tab=reports" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-900/20 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                返回报告库
+            </a>
+            <a href="/?tab=generator" class="px-6 py-3 bg-[var(--card-bg)] hover:bg-[var(--table-header-bg)] text-[var(--text-color)] border border-[var(--border-color)] rounded-xl font-bold transition-all flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                生成新报告
+            </a>
+            <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="px-6 py-3 bg-[var(--card-bg)] hover:bg-[var(--table-header-bg)] text-[var(--text-color)] border border-[var(--border-color)] rounded-xl font-bold transition-all flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                回到顶部
+            </button>
+        </div>
     </main>
 
     <div class="controls">
-        <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="control-btn" title="回到顶部">
+        <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="control-btn" data-tooltip="回到顶部">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
         </button>
-        <button onclick="toggleTheme()" class="control-btn" title="切换主题">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        <button onclick="toggleTheme()" class="control-btn" data-tooltip="切换阅读模式">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
         </button>
-        <button onclick="changeFontSize(1)" class="control-btn" title="放大字体">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 15 7-7 7 7"/></svg>
+        <button onclick="changeFontSize(1)" class="control-btn" data-tooltip="放大字体">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M9 12h6"/><path d="M12 9v6"/></svg>
         </button>
-        <button onclick="changeFontSize(-1)" class="control-btn" title="缩小字体">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 9-7 7-7-7"/></svg>
+        <button onclick="changeFontSize(-1)" class="control-btn" data-tooltip="缩小字体">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M9 12h6"/></svg>
         </button>
     </div>
 
@@ -611,22 +654,65 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
     </footer>
 
     <script>
-        // TOC Generation
+        // TOC Generation and Scroll Spy
         const content = document.getElementById('report-content');
         const tocList = document.getElementById('toc-list');
         const headings = content.querySelectorAll('h2, h3');
+        const tocLinks = [];
+        
+        let h2Counter = 0;
+        let h3Counter = 0;
         
         headings.forEach((heading, index) => {
             const id = 'heading-' + index;
             heading.id = id;
+            
+            let prefix = '';
+            if (heading.tagName === 'H2') {
+                h2Counter++;
+                h3Counter = 0;
+                prefix = h2Counter + '. ';
+            } else if (heading.tagName === 'H3') {
+                h3Counter++;
+                prefix = h2Counter + '.' + h3Counter + ' ';
+            }
+            
             const li = document.createElement('li');
-            li.className = heading.tagName === 'H3' ? 'pl-4' : '';
             const a = document.createElement('a');
             a.href = '#' + id;
-            a.textContent = heading.textContent;
+            a.textContent = prefix + heading.textContent;
+            a.className = heading.tagName === 'H2' ? 'toc-h2' : 'toc-h3';
             li.appendChild(a);
             tocList.appendChild(li);
+            tocLinks.push({ id, element: a });
         });
+
+        // Intersection Observer for Scroll Spy
+        const observerOptions = {
+            root: null,
+            rootMargin: '-100px 0px -60% 0px',
+            threshold: 0
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    tocLinks.forEach(link => link.element.classList.remove('active'));
+                    const activeLink = tocLinks.find(link => link.id === entry.target.id);
+                    if (activeLink) {
+                        activeLink.element.classList.add('active');
+                        const tocContainer = document.getElementById('toc');
+                        const linkRect = activeLink.element.getBoundingClientRect();
+                        const tocRect = tocContainer.getBoundingClientRect();
+                        if (linkRect.bottom > tocRect.bottom || linkRect.top < tocRect.top) {
+                            activeLink.element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        }
+                    }
+                }
+            });
+        }, observerOptions);
+
+        headings.forEach(heading => observer.observe(heading));
 
         // Theme Toggle
         let currentTheme = 0; // 0: light, 1: dark, 2: sepia
@@ -1584,15 +1670,19 @@ app.get('/api/reports', authenticateToken, (req, res) => {
 
 app.get('/api/reports/:id/view', (req, res) => {
   try {
-    const report = db.prepare('SELECT html_path FROM reports WHERE id = ?').get(req.params.id) as any;
-    if (report && report.html_path && fs.existsSync(report.html_path)) {
+    const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(req.params.id) as any;
+    if (report && report.md_path && fs.existsSync(report.md_path)) {
+      const markdown = fs.readFileSync(report.md_path, 'utf8');
+      const htmlContent = generateHtmlReport(report.title, markdown, report.feishu_url, report.created_at);
       res.setHeader('Content-Type', 'text/html');
-      let html = fs.readFileSync(report.html_path, 'utf8');
-      // Inject CSS fixes for older reports that don't have them
-      if (!html.includes('overscroll-behavior-x: none;')) {
-        html = html.replace('</head>', '<style>body, html { overflow-x: hidden; overscroll-behavior-x: none; }</style></head>');
+      res.send(htmlContent);
+      
+      if (report.html_path) {
+        fs.writeFileSync(report.html_path, htmlContent);
       }
-      res.send(html);
+    } else if (report && report.html_path && fs.existsSync(report.html_path)) {
+      res.setHeader('Content-Type', 'text/html');
+      res.send(fs.readFileSync(report.html_path, 'utf8'));
     } else {
       res.status(404).send('Report not found');
     }
@@ -1603,8 +1693,15 @@ app.get('/api/reports/:id/view', (req, res) => {
 
 app.get('/api/reports/:id/download', (req, res) => {
   try {
-    const report = db.prepare('SELECT html_path, title FROM reports WHERE id = ?').get(req.params.id) as any;
-    if (report && report.html_path && fs.existsSync(report.html_path)) {
+    const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(req.params.id) as any;
+    if (report && report.md_path && fs.existsSync(report.md_path)) {
+      const markdown = fs.readFileSync(report.md_path, 'utf8');
+      const htmlContent = generateHtmlReport(report.title, markdown, report.feishu_url, report.created_at);
+      if (report.html_path) {
+        fs.writeFileSync(report.html_path, htmlContent);
+      }
+      res.download(report.html_path, `${report.title}.html`);
+    } else if (report && report.html_path && fs.existsSync(report.html_path)) {
       res.download(report.html_path, `${report.title}.html`);
     } else {
       res.status(404).send('Report not found');

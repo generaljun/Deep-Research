@@ -91,7 +91,12 @@ const SEARCH_PROVIDERS = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'generator' | 'reports' | 'admin'>('generator');
+  const [activeTab, setActiveTab] = useState<'generator' | 'reports' | 'admin'>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab === 'reports' || tab === 'admin') return tab;
+    return 'generator';
+  });
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [user, setUser] = useState<any>(JSON.parse(localStorage.getItem('user') || 'null'));
   const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>(() => {
