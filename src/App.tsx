@@ -384,7 +384,7 @@ export default function App() {
         ) : (
           <div className="relative">
             <div className={activeTab === 'generator' ? 'block' : 'hidden'}>
-              <GeneratorView token={token} user={user} onLogout={handleLogout} isActive={activeTab === 'generator'} />
+              <GeneratorView token={token} user={user} onLogout={handleLogout} isActive={activeTab === 'generator'} setActiveTab={setActiveTab} />
             </div>
             <div className={activeTab === 'reports' ? 'block' : 'hidden'}>
               <ReportsView token={token} user={user} onLogout={handleLogout} isActive={activeTab === 'reports'} />
@@ -622,7 +622,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
   );
 }
 
-function GeneratorView({ token, user, onLogout, isActive }: { token: string, user: any, onLogout: () => void, isActive: boolean }) {
+function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { token: string, user: any, onLogout: () => void, isActive: boolean, setActiveTab: (tab: 'generator' | 'reports' | 'admin') => void }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [topic, setTopic] = useState('');
   const [length, setLength] = useState('5000-8000');

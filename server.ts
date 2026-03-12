@@ -552,15 +552,23 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
         .prose th { background-color: var(--table-header-bg); border: 1px solid var(--border-color); padding: 0.75rem; text-align: left; font-weight: 600; color: var(--text-color); }
         .prose td { border: 1px solid var(--border-color); padding: 0.75rem; color: var(--text-color); }
         
-        #toc { position: fixed; left: 2rem; top: 6rem; width: 280px; max-height: calc(100vh - 8rem); overflow-y: auto; padding: 1.5rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid var(--border-color); display: none; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); scrollbar-width: thin; }
+        #toc { position: fixed; left: 2rem; top: 6rem; width: 280px; max-height: calc(100vh - 8rem); overflow-y: auto; padding: 1.5rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid var(--border-color); display: none; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); scrollbar-width: thin; z-index: 40; }
         @media (min-width: 1280px) { #toc { display: block; } }
         #toc ul { list-style: none; padding-left: 0; margin: 0; }
-        #toc li { margin-bottom: 0.25rem; font-size: 0.875rem; line-height: 1.4; }
-        #toc a { display: block; padding: 0.4rem 0.75rem; color: var(--text-color); opacity: 0.7; text-decoration: none; transition: all 0.2s; border-radius: 0.375rem; border-left: 2px solid transparent; }
-        #toc a:hover { opacity: 1; background: var(--table-header-bg); }
+        #toc li { margin-bottom: 0.1rem; font-size: 0.875rem; line-height: 1.4; }
+        .toc-item-container { display: flex; align-items: flex-start; border-radius: 0.375rem; transition: background 0.2s; margin-bottom: 2px; }
+        .toc-item-container:hover { background: var(--table-header-bg); }
+        .toc-toggle { width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0.4; transition: all 0.2s; flex-shrink: 0; margin-top: 0.1rem; border-radius: 0.25rem; }
+        .toc-toggle:hover { opacity: 1; background: var(--border-color); }
+        .toc-toggle.collapsed { transform: rotate(-90deg); }
+        .toc-toggle svg { width: 14px; height: 14px; }
+        #toc a { display: block; flex-grow: 1; padding: 0.3rem 0.5rem; color: var(--text-color); opacity: 0.75; text-decoration: none; transition: all 0.2s; border-left: 2px solid transparent; }
+        #toc a:hover { opacity: 1; color: var(--link-color); }
         #toc a.active { opacity: 1; color: var(--link-color); font-weight: 600; background: var(--toc-active-bg); border-left-color: var(--link-color); }
-        #toc .toc-h2 { font-weight: 500; margin-top: 0.5rem; }
-        #toc .toc-h3 { padding-left: 1.5rem; font-size: 0.8rem; opacity: 0.8; }
+        #toc .toc-h2 { font-weight: 600; }
+        #toc .toc-h3 { font-size: 0.8rem; opacity: 0.7; }
+        .toc-sublist { display: block; margin-left: 0.75rem; padding-left: 1rem; border-left: 1px solid var(--border-color); margin-bottom: 0.5rem; }
+        .toc-sublist.collapsed { display: none; }
 
         .controls { position: fixed; right: 2rem; bottom: 2rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 100; }
         .control-btn { position: relative; width: 3rem; height: 3rem; border-radius: 50%; background: var(--card-bg); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); transition: all 0.2s; color: var(--text-color); }
@@ -662,29 +670,83 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
         
         let h2Counter = 0;
         let h3Counter = 0;
+        let currentSublist = null;
         
         headings.forEach((heading, index) => {
             const id = 'heading-' + index;
             heading.id = id;
             
             let prefix = '';
+            const li = document.createElement('li');
+            const container = document.createElement('div');
+            container.className = 'toc-item-container';
+            
+            const a = document.createElement('a');
+            a.href = '#' + id;
+            
             if (heading.tagName === 'H2') {
                 h2Counter++;
                 h3Counter = 0;
                 prefix = h2Counter + '. ';
+                a.textContent = prefix + heading.textContent;
+                a.className = 'toc-h2';
+                
+                const toggle = document.createElement('span');
+                toggle.className = 'toc-toggle';
+                toggle.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+                
+                container.appendChild(toggle);
+                container.appendChild(a);
+                li.appendChild(container);
+                
+                currentSublist = document.createElement('ul');
+                currentSublist.className = 'toc-sublist';
+                li.appendChild(currentSublist);
+                
+                const thisSublist = currentSublist;
+                const toggleSublist = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggle.classList.toggle('collapsed');
+                    thisSublist.classList.toggle('collapsed');
+                };
+                
+                toggle.onclick = toggleSublist;
+                
+                // Allow clicking the container (except the link text) to toggle
+                container.onclick = (e) => {
+                    if (e.target !== a) {
+                        toggleSublist(e);
+                    }
+                };
+                
+                tocList.appendChild(li);
             } else if (heading.tagName === 'H3') {
                 h3Counter++;
                 prefix = h2Counter + '.' + h3Counter + ' ';
+                a.textContent = prefix + heading.textContent;
+                a.className = 'toc-h3';
+                
+                container.appendChild(a);
+                li.appendChild(container);
+                
+                if (currentSublist) {
+                    currentSublist.appendChild(li);
+                } else {
+                    tocList.appendChild(li);
+                }
             }
             
-            const li = document.createElement('li');
-            const a = document.createElement('a');
-            a.href = '#' + id;
-            a.textContent = prefix + heading.textContent;
-            a.className = heading.tagName === 'H2' ? 'toc-h2' : 'toc-h3';
-            li.appendChild(a);
-            tocList.appendChild(li);
             tocLinks.push({ id, element: a });
+        });
+        
+        // Hide toggle if no children
+        tocList.querySelectorAll('.toc-toggle').forEach(toggle => {
+            const sublist = toggle.closest('li').querySelector('.toc-sublist');
+            if (!sublist || sublist.children.length === 0) {
+                toggle.style.visibility = 'hidden';
+                if (sublist) sublist.style.display = 'none';
+            }
         });
 
         // Intersection Observer for Scroll Spy
@@ -701,6 +763,17 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
                     const activeLink = tocLinks.find(link => link.id === entry.target.id);
                     if (activeLink) {
                         activeLink.element.classList.add('active');
+                        
+                        // Expand parent if it's collapsed
+                        const parentSublist = activeLink.element.closest('.toc-sublist');
+                        if (parentSublist && parentSublist.classList.contains('collapsed')) {
+                            parentSublist.classList.remove('collapsed');
+                            const parentToggle = parentSublist.parentElement.querySelector('.toc-toggle');
+                            if (parentToggle) {
+                                parentToggle.classList.remove('collapsed');
+                            }
+                        }
+                        
                         const tocContainer = document.getElementById('toc');
                         const linkRect = activeLink.element.getBoundingClientRect();
                         const tocRect = tocContainer.getBoundingClientRect();
