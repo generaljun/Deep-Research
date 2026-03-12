@@ -545,9 +545,9 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
         .prose h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: inherit; }
         .prose p { margin-top: 1rem; margin-bottom: 1rem; line-height: 1.75; color: inherit; opacity: 0.9; }
         .prose table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; margin-bottom: 1.5rem; font-size: 0.875rem; background: var(--card-bg); color: var(--text-color); }
-        .table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1.5rem 0; border-radius: 0.5rem; border: 1px solid var(--border-color); }
+        .table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1.5rem 0; border-radius: 0.5rem; border: 1px solid var(--border-color); overscroll-behavior-x: contain; touch-action: pan-x; }
         .prose table { margin: 0; border: none; }
-        .chart-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 2rem 0; padding: 1rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid var(--border-color); }
+        .chart-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 2rem 0; padding: 1rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid var(--border-color); overscroll-behavior-x: contain; touch-action: pan-x; }
         .chart-container { min-width: 600px; height: 400px; position: relative; }
         .prose th { background-color: var(--table-header-bg); border: 1px solid var(--border-color); padding: 0.75rem; text-align: left; font-weight: 600; color: var(--text-color); }
         .prose td { border: 1px solid var(--border-color); padding: 0.75rem; color: var(--text-color); }
@@ -1638,6 +1638,11 @@ app.post('/api/research', authenticateToken, (req, res) => {
 
     const taskId = Date.now().toString();
     const user = (req as any).user.username;
+    const userData = db.prepare('SELECT quota FROM users WHERE username = ?').get(user) as any;
+    
+    if (userData && userData.quota <= 0) {
+      return res.status(403).json({ error: '您的报告生成额度已用完，请联系管理员充值。' });
+    }
     
     if (currentRunningTask) {
       return res.status(409).json({ 
@@ -1646,6 +1651,7 @@ app.post('/api/research', authenticateToken, (req, res) => {
     }
 
     db.prepare('INSERT INTO tasks (id, topic, status) VALUES (?, ?, ?)').run(taskId, topic, 'running');
+    db.prepare('UPDATE users SET quota = quota - 1 WHERE username = ?').run(user);
     
     logger.info(`User ${user} started research task: ${topic}`);
     runDeepResearch(taskId, topic, length, user);

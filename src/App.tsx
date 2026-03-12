@@ -639,6 +639,7 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
 
   const [loading, setLoading] = useState(false);
   const [outline, setOutline] = useState<Outline | null>(null);
+  const [isOutlineLocked, setIsOutlineLocked] = useState(false);
   const [status, setStatus] = useState<'idle' | 'generating' | 'done'>('idle');
   const [taskId, setTaskId] = useState<string | null>(null);
   const [reportUrls, setReportUrls] = useState<{ feishuUrl: string | null, webUrl: string | null } | null>(null);
@@ -1146,18 +1147,27 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
             {/* Decorative background */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl"></div>
             
-            <h2 className="text-2xl font-bold mb-8 flex items-center gap-3 text-slate-800 dark:text-cyan-50">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-cyan-950 border border-blue-200 dark:border-cyan-500/30 flex items-center justify-center">
-                <Database className="w-5 h-5 text-blue-500 dark:text-cyan-400" />
+            <h2 className="text-2xl font-bold mb-8 flex items-center justify-between gap-3 text-slate-800 dark:text-cyan-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-cyan-950 border border-blue-200 dark:border-cyan-500/30 flex items-center justify-center">
+                  <Database className="w-5 h-5 text-blue-500 dark:text-cyan-400" />
+                </div>
+                研究大纲编译完成
               </div>
-              研究大纲编译完成
+              <button
+                onClick={() => setIsOutlineLocked(!isOutlineLocked)}
+                className={`text-sm px-4 py-2 rounded-lg font-bold transition-all ${isOutlineLocked ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}
+              >
+                {isOutlineLocked ? '已锁定 (点击解锁)' : '可编辑 (点击锁定)'}
+              </button>
             </h2>
             
             <div className="bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-2xl p-5 md:p-8 mb-6 md:mb-8 relative z-10 shadow-inner">
               <input 
                 value={outline.report_title}
+                disabled={isOutlineLocked}
                 onChange={(e) => setOutline({...outline, report_title: e.target.value})}
-                className="w-full bg-transparent text-lg md:text-xl font-black text-blue-600 dark:text-cyan-400 mb-6 md:mb-8 pb-4 md:pb-6 border-b border-slate-100 dark:border-cyan-900/30 outline-none focus:border-blue-500"
+                className="w-full bg-transparent text-lg md:text-xl font-black text-blue-600 dark:text-cyan-400 mb-6 md:mb-8 pb-4 md:pb-6 border-b border-slate-100 dark:border-cyan-900/30 outline-none focus:border-blue-500 disabled:opacity-70"
               />
               <div className="space-y-8">
                 {outline.chapters.map((ch, idx) => (
@@ -1168,22 +1178,24 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
                     <div className="flex-1 space-y-2">
                       <input 
                         value={ch.chapter_title}
+                        disabled={isOutlineLocked}
                         onChange={(e) => {
                           const newChapters = [...outline.chapters];
                           newChapters[idx].chapter_title = e.target.value;
                           setOutline({...outline, chapters: newChapters});
                         }}
-                        className="w-full bg-transparent font-bold text-slate-700 dark:text-cyan-100 text-lg outline-none focus:text-blue-500"
+                        className="w-full bg-transparent font-bold text-slate-700 dark:text-cyan-100 text-lg outline-none focus:text-blue-500 disabled:opacity-70"
                       />
                       <textarea 
                         value={ch.core_points}
+                        disabled={isOutlineLocked}
                         onChange={(e) => {
                           const newChapters = [...outline.chapters];
                           newChapters[idx].core_points = e.target.value;
                           setOutline({...outline, chapters: newChapters});
                         }}
                         rows={2}
-                        className="w-full bg-transparent text-sm text-blue-400 dark:text-slate-500 dark:text-cyan-500/70 leading-relaxed outline-none focus:text-slate-400 resize-none"
+                        className="w-full bg-transparent text-sm text-blue-400 dark:text-slate-500 dark:text-cyan-500/70 leading-relaxed outline-none focus:text-slate-400 resize-none disabled:opacity-70"
                       />
                     </div>
                   </div>
@@ -1194,13 +1206,13 @@ function GeneratorView({ token, user, onLogout, isActive }: { token: string, use
             {status === 'idle' && (
               <button
                 onClick={handleStartReport}
-                disabled={systemStatus.isBusy}
+                disabled={systemStatus.isBusy || !isOutlineLocked}
                 className="w-full relative group overflow-hidden rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 via-cyan-600 to-emerald-600 bg-[length:200%_auto] animate-gradient group-hover:bg-[length:100%_auto] transition-all duration-500"></div>
+                <div className={`absolute inset-0 bg-gradient-to-r ${isOutlineLocked ? 'from-emerald-600 via-cyan-600 to-emerald-600' : 'from-slate-400 to-slate-500'} bg-[length:200%_auto] animate-gradient group-hover:bg-[length:100%_auto] transition-all duration-500`}></div>
                 <div className="relative px-4 py-5 flex items-center justify-center gap-3 text-white font-bold tracking-wide text-lg">
                   <Play className="w-6 h-6 fill-current" />
-                  {systemStatus.isBusy ? '系统繁忙，请排队等待' : '确认大纲，启动后台静默生成引擎'}
+                  {systemStatus.isBusy ? '系统繁忙，请排队等待' : !isOutlineLocked ? '请先锁定大纲以确认内容' : '确认大纲，启动后台静默生成引擎'}
                 </div>
               </button>
             )}
