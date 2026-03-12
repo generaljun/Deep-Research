@@ -639,7 +639,6 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
 
   const [loading, setLoading] = useState(false);
   const [outline, setOutline] = useState<Outline | null>(null);
-  const [isOutlineLocked, setIsOutlineLocked] = useState(false);
   const [status, setStatus] = useState<'idle' | 'generating' | 'done'>('idle');
   const [taskId, setTaskId] = useState<string | null>(null);
   const [reportUrls, setReportUrls] = useState<{ feishuUrl: string | null, webUrl: string | null } | null>(null);
@@ -1154,18 +1153,12 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                 </div>
                 研究大纲编译完成
               </div>
-              <button
-                onClick={() => setIsOutlineLocked(!isOutlineLocked)}
-                className={`text-sm px-4 py-2 rounded-lg font-bold transition-all ${isOutlineLocked ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}
-              >
-                {isOutlineLocked ? '已锁定 (点击解锁)' : '可编辑 (点击锁定)'}
-              </button>
             </h2>
             
             <div className="bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-2xl p-5 md:p-8 mb-6 md:mb-8 relative z-10 shadow-inner">
               <input 
                 value={outline.report_title}
-                disabled={isOutlineLocked}
+                disabled={status !== 'idle'}
                 onChange={(e) => setOutline({...outline, report_title: e.target.value})}
                 className="w-full bg-transparent text-lg md:text-xl font-black text-blue-600 dark:text-cyan-400 mb-6 md:mb-8 pb-4 md:pb-6 border-b border-slate-100 dark:border-cyan-900/30 outline-none focus:border-blue-500 disabled:opacity-70"
               />
@@ -1178,7 +1171,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                     <div className="flex-1 space-y-2">
                       <input 
                         value={ch.chapter_title}
-                        disabled={isOutlineLocked}
+                        disabled={status !== 'idle'}
                         onChange={(e) => {
                           const newChapters = [...outline.chapters];
                           newChapters[idx].chapter_title = e.target.value;
@@ -1188,7 +1181,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                       />
                       <textarea 
                         value={ch.core_points}
-                        disabled={isOutlineLocked}
+                        disabled={status !== 'idle'}
                         onChange={(e) => {
                           const newChapters = [...outline.chapters];
                           newChapters[idx].core_points = e.target.value;
@@ -1204,17 +1197,22 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
             </div>
 
             {status === 'idle' && (
-              <button
-                onClick={handleStartReport}
-                disabled={systemStatus.isBusy || !isOutlineLocked}
-                className="w-full relative group overflow-hidden rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div className={`absolute inset-0 bg-gradient-to-r ${isOutlineLocked ? 'from-emerald-600 via-cyan-600 to-emerald-600' : 'from-slate-400 to-slate-500'} bg-[length:200%_auto] animate-gradient group-hover:bg-[length:100%_auto] transition-all duration-500`}></div>
-                <div className="relative px-4 py-5 flex items-center justify-center gap-3 text-white font-bold tracking-wide text-lg">
-                  <Play className="w-6 h-6 fill-current" />
-                  {systemStatus.isBusy ? '系统繁忙，请排队等待' : !isOutlineLocked ? '请先锁定大纲以确认内容' : '确认大纲，启动后台静默生成引擎'}
-                </div>
-              </button>
+              <div className="space-y-3">
+                <p className="text-xs text-center text-slate-500 dark:text-cyan-600/80">
+                  如果您对大纲不满，可以直接编选大纲内容再提交。一旦提交后，这些大纲内容仅供显示，不处于允许编辑状态。
+                </p>
+                <button
+                  onClick={handleStartReport}
+                  disabled={systemStatus.isBusy}
+                  className="w-full relative group overflow-hidden rounded-xl disabled:opacity-50 disabled:cursor-not-allowed animate-pulse hover:animate-none shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 via-cyan-600 to-emerald-600 bg-[length:200%_auto] animate-gradient group-hover:bg-[length:100%_auto] transition-all duration-500"></div>
+                  <div className="relative px-4 py-5 flex items-center justify-center gap-3 text-white font-bold tracking-wide text-lg">
+                    <Play className="w-6 h-6 fill-current" />
+                    {systemStatus.isBusy ? '系统繁忙，请排队等待' : '确认大纲，即刻起航生成报告'}
+                  </div>
+                </button>
+              </div>
             )}
 
             {status === 'done' && (
