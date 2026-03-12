@@ -488,9 +488,11 @@ md.use(anchor, { permalink: anchor.permalink.headerLink() });
 md.use(toc);
 
 const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string, createdAt?: string) => {
-  const content = md.render(markdown);
+  // Remove the first h1 heading from the markdown to avoid duplication with the HTML header
+  const cleanMarkdown = markdown.replace(/^#\s+.*?\n/, '');
+  const content = md.render(cleanMarkdown);
   // Calculate word count (simplified: count characters excluding whitespace)
-  const wordCount = markdown.replace(/\s+/g, '').length;
+  const wordCount = cleanMarkdown.replace(/\s+/g, '').length;
   const readingTime = Math.ceil(wordCount / 500); // Assume 500 chars per minute
   const displayTime = createdAt 
     ? new Date(createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) 
@@ -1112,21 +1114,21 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
         const writerPrompt = `你是一位顶级的学术研究员与行业资深撰稿人。请根据【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
 
 【学术规范与行文要求】
-1. 章节编号：本章是报告的第 ${i + 1} 章。请在标题中明确体现，例如：“第 ${i + 1} 章：${chapter.chapter_title}”。
+1. 章节编号：本章是报告的第 ${i + 1} 章。请务必使用 Markdown 二级标题（##）作为本章的主标题，例如：“## 第 ${i + 1} 章：${chapter.chapter_title}”。本章内的所有子标题请使用三级（###）或四级（####）标题。
 2. 深度剖析：严禁简单的信息堆砌。你必须对搜集到的信息进行“链条式整合”，分析不同现象之间的因果关系、行业底层逻辑以及未来的演进趋势。
 3. 行业洞察：融入你作为资深专家的行业思考，对技术瓶颈、市场博弈、政策导向进行深度推演。
-4. 可视化图表：请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格。**严禁使用 Mermaid 语法**。在表格前必须提供一个描述性的三级标题（如：### 2024年中国AI大模型市场规模预测），以便系统自动生成图表标题。合理使用二级/三级标题、加粗、引用块等元素。
+4. 可视化图表：请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格。**严禁使用 Mermaid 语法**。在表格前必须提供一个描述性的三级标题（如：### 2024年中国AI大模型市场规模预测），以便系统自动生成图表标题。合理使用三级/四级标题、加粗、引用块等元素。
 5. 案例分析格式：若涉及案例研究，请使用“【案例分析】”标识，并采用缩进或引用块（>）形式突出显示，包含：背景、核心举措、成效评估、启示。
 6. 数据标注规范：
    - 数据引用：所有关键数据必须在句末使用方括号上标形式标注，如 [1]、[2]。
    - 引用格式：参考学术期刊规范（GB/T 7714-2015）。
-6. 参考文献列表：必须在本章正文的最后，设立“### 参考文献与数据源”小节，按顺序排列。格式如下：
+7. 参考文献列表：必须在本章正文的最后，设立“### 参考文献与数据源”小节，按顺序排列。格式如下：
    - 网页/新闻：[序号] 作者. 标题 [EB/OL]. (发布日期) [引用日期]. URL.
    - 报告/期刊：[序号] 作者. 标题 [J/R]. 刊名/机构, 年份.
    示例：
    [1] 艾瑞咨询. 2024年中国AI大模型行业研究报告 [R]. 艾瑞咨询, 2024.
    [2] 财新网. 全球半导体供应链重构观察 [EB/OL]. (2023-12-01) [2024-03-09]. http://...
-7. 严禁废话：直接输出正文，绝对不要输出任何开场白或结束语。
+8. 严禁废话：直接输出正文，绝对不要输出任何开场白或结束语。
 
 章节标题：${chapter.chapter_title}
 核心论点：${chapter.core_points}
@@ -1144,8 +1146,10 @@ ${searchResults}`;
         
         // 防止标题重复：如果内容没有以 ## 开头，或者没有包含当前章节标题，则手动加上
         let finalContent = content;
-        if (!content.includes(chapter.chapter_title)) {
-          finalContent = `## ${chapter.chapter_title}\n\n${content}`;
+        // 强制确保章节标题是二级标题 (##)
+        finalContent = finalContent.replace(/^(#|###|####)\s+(第\s*\d+\s*章.*)/m, '## $2');
+        if (!finalContent.includes(chapter.chapter_title)) {
+          finalContent = `## 第 ${i + 1} 章：${chapter.chapter_title}\n\n${finalContent}`;
         }
         
         fs.appendFileSync(filePath, `${finalContent}\n\n`);
