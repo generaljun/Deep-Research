@@ -5,6 +5,7 @@ import SetupWizard from './SetupWizard';
 import AnimationDemo from './AnimationDemo';
 import WebGLShader from './components/WebGLShader';
 import AnimatedCharacters from './components/AnimatedCharacters';
+import BackgroundPaths from './components/BackgroundPaths';
 
 type Message = {
   role: 'user' | 'assistant' | 'system';
@@ -221,6 +222,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] dark:bg-[#030712] text-slate-800 dark:text-cyan-50 font-sans selection:bg-blue-200 dark:selection:bg-cyan-500/30 relative overflow-hidden transition-colors duration-500 pb-20 md:pb-0">
+      <BackgroundPaths isGenerating={status === 'generating'} />
       {showCursor && <MagneticCursor />}
       {/* Task Progress Bar */}
       {taskStatus && (taskStatus.running || taskStatus.queue.length > 0) && (
