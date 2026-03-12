@@ -133,6 +133,8 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
             isPasswordFocused={isPasswordFocused} 
             isPasswordVisible={isPasswordVisible} 
             typingLength={typingLength} 
+            scaleMultiplier={0.9}
+            offsetX={-30}
           />
         </div>
 
