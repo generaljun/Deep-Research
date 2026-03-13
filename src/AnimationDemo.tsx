@@ -50,7 +50,7 @@ export default function AnimationDemo({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-900/80  z-[200] flex items-center justify-center p-4">
       <div className="bg-white dark:bg-[#0a0a0a] rounded-3xl p-8 max-w-4xl w-full border border-slate-200 dark:border-cyan-900/50 shadow-2xl relative overflow-hidden animate-in fade-in zoom-in-95 duration-300">
         <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-cyan-400 z-10 transition-colors"><X className="w-6 h-6" /></button>
         
@@ -70,7 +70,7 @@ export default function AnimationDemo({ onClose }: { onClose: () => void }) {
             <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-3 shadow-lg transition-colors duration-500 ${step === 0 ? 'bg-blue-500 text-white shadow-blue-500/50' : 'bg-white dark:bg-cyan-950 text-slate-500 dark:text-cyan-500 border border-slate-200 dark:border-cyan-800'}`}>
               <User className="w-8 h-8" />
             </div>
-            <span className="text-xs font-bold text-slate-600 dark:text-cyan-200 bg-white/80 dark:bg-[#0a0a0a]/80 px-2 py-1 rounded-md backdrop-blur-sm">用户输入</span>
+            <span className="text-xs font-bold text-slate-600 dark:text-cyan-200 bg-white/80 dark:bg-[#0a0a0a]/80 px-2 py-1 rounded-md ">用户输入</span>
           </div>
 
           {/* AI Core Node */}
@@ -86,7 +86,7 @@ export default function AnimationDemo({ onClose }: { onClose: () => void }) {
                 </>
               )}
             </div>
-            <span className="text-sm font-black text-slate-800 dark:text-cyan-50 bg-white/80 dark:bg-[#0a0a0a]/80 px-3 py-1 rounded-lg backdrop-blur-sm">AI 核心引擎</span>
+            <span className="text-sm font-black text-slate-800 dark:text-cyan-50 bg-white/80 dark:bg-[#0a0a0a]/80 px-3 py-1 rounded-lg ">AI 核心引擎</span>
             {step >= 2 && step <= 6 && (
               <span className="absolute -bottom-8 text-[10px] font-mono bg-blue-100 dark:bg-cyan-900/80 text-blue-600 dark:text-cyan-300 px-2 py-0.5 rounded-full whitespace-nowrap border border-blue-200 dark:border-cyan-700">
                 处理中: 第 {chapter}/{totalChapters} 章
@@ -99,7 +99,7 @@ export default function AnimationDemo({ onClose }: { onClose: () => void }) {
             <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-3 shadow-lg transition-colors duration-500 ${step === 2 || step === 3 ? 'bg-purple-500 text-white shadow-purple-500/50' : 'bg-white dark:bg-cyan-950 text-slate-500 dark:text-cyan-500 border border-slate-200 dark:border-cyan-800'}`}>
               <Globe className={`w-8 h-8 ${step === 2 ? 'animate-spin' : ''}`} />
             </div>
-            <span className="text-xs font-bold text-slate-600 dark:text-cyan-200 bg-white/80 dark:bg-[#0a0a0a]/80 px-2 py-1 rounded-md backdrop-blur-sm">博查检索</span>
+            <span className="text-xs font-bold text-slate-600 dark:text-cyan-200 bg-white/80 dark:bg-[#0a0a0a]/80 px-2 py-1 rounded-md ">博查检索</span>
           </div>
 
           {/* File System Node */}
@@ -107,7 +107,7 @@ export default function AnimationDemo({ onClose }: { onClose: () => void }) {
             <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-3 shadow-lg transition-colors duration-500 ${step === 5 || step === 6 ? 'bg-emerald-500 text-white shadow-emerald-500/50' : 'bg-white dark:bg-cyan-950 text-slate-500 dark:text-cyan-500 border border-slate-200 dark:border-cyan-800'}`}>
               <HardDrive className="w-8 h-8" />
             </div>
-            <span className="text-xs font-bold text-slate-600 dark:text-cyan-200 bg-white/80 dark:bg-[#0a0a0a]/80 px-2 py-1 rounded-md backdrop-blur-sm">NAS 本地存储</span>
+            <span className="text-xs font-bold text-slate-600 dark:text-cyan-200 bg-white/80 dark:bg-[#0a0a0a]/80 px-2 py-1 rounded-md ">NAS 本地存储</span>
           </div>
 
           {/* SVG Connection Lines */}

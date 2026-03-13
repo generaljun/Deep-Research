@@ -132,6 +132,11 @@ try {
       role TEXT,
       must_change_password INTEGER DEFAULT 0,
       quota INTEGER DEFAULT 3,
+      daily_limit INTEGER DEFAULT 3,
+      total_quota INTEGER DEFAULT 10,
+      used_quota INTEGER DEFAULT 0,
+      daily_used INTEGER DEFAULT 0,
+      last_reset_date TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS login_attempts (
@@ -152,12 +157,33 @@ try {
     );
   `);
   
-  // Migration: add quota column if it doesn't exist
+  // Migration: add new columns if they don't exist
   try {
     const columns = db.prepare("PRAGMA table_info(users)").all() as any[];
-    if (!columns.find(c => c.name === 'quota')) {
+    const colNames = columns.map(c => c.name);
+    if (!colNames.includes('quota')) {
       db.exec("ALTER TABLE users ADD COLUMN quota INTEGER DEFAULT 3");
       console.log("Migration: Added quota column to users table");
+    }
+    if (!colNames.includes('daily_limit')) {
+      db.exec("ALTER TABLE users ADD COLUMN daily_limit INTEGER DEFAULT 3");
+      console.log("Migration: Added daily_limit column to users table");
+    }
+    if (!colNames.includes('total_quota')) {
+      db.exec("ALTER TABLE users ADD COLUMN total_quota INTEGER DEFAULT 10");
+      console.log("Migration: Added total_quota column to users table");
+    }
+    if (!colNames.includes('used_quota')) {
+      db.exec("ALTER TABLE users ADD COLUMN used_quota INTEGER DEFAULT 0");
+      console.log("Migration: Added used_quota column to users table");
+    }
+    if (!colNames.includes('daily_used')) {
+      db.exec("ALTER TABLE users ADD COLUMN daily_used INTEGER DEFAULT 0");
+      console.log("Migration: Added daily_used column to users table");
+    }
+    if (!colNames.includes('last_reset_date')) {
+      db.exec("ALTER TABLE users ADD COLUMN last_reset_date TEXT");
+      console.log("Migration: Added last_reset_date column to users table");
     }
   } catch (e) {
     console.error("Migration error:", e);
@@ -489,7 +515,17 @@ md.use(toc);
 
 const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string, createdAt?: string) => {
   // Remove the first h1 heading from the markdown to avoid duplication with the HTML header
-  const cleanMarkdown = markdown.replace(/^#\s+.*?\n/, '');
+  let cleanMarkdown = markdown.replace(/^#\s+.*?\n/, '');
+  
+  // Fix malformed headings like "### ### Heading" or "#### ### Heading"
+  cleanMarkdown = cleanMarkdown.replace(/^ {0,3}(#{1,6})\s+#{1,6}\s+/gm, '$1 ');
+  
+  // Fix missing spaces after heading markers like "###Heading"
+  cleanMarkdown = cleanMarkdown.replace(/^ {0,3}(#{1,6})([^#\s])/gm, '$1 $2');
+  
+  // Fix headings wrapped in bold tags like "**### Heading**"
+  cleanMarkdown = cleanMarkdown.replace(/^ {0,3}\*\*(#{1,6})\s+(.*?)\*\*/gm, '$1 **$2**');
+  
   const content = md.render(cleanMarkdown);
   // Calculate word count (simplified: count characters excluding whitespace)
   const wordCount = cleanMarkdown.replace(/\s+/g, '').length;
@@ -541,15 +577,15 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
         
         body { font-family: 'Inter', 'Noto Sans SC', sans-serif; background-color: var(--bg-color); color: var(--text-color); transition: all 0.3s ease; overflow-x: hidden; overscroll-behavior-x: none; }
         html { overflow-x: hidden; }
-        .prose { max-width: 65ch; margin: 0 auto; }
-        .prose h1 { font-size: 2.25rem; font-weight: 800; margin-top: 2rem; margin-bottom: 1rem; color: inherit; }
-        .prose h2 { font-size: 1.5rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.75rem; color: inherit; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
-        .prose h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: inherit; }
-        .prose p { margin-top: 1rem; margin-bottom: 1rem; line-height: 1.75; color: inherit; opacity: 0.9; }
-        .prose table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; margin-bottom: 1.5rem; font-size: 0.875rem; background: var(--card-bg); color: var(--text-color); }
-        .table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1.5rem 0; border-radius: 0.5rem; border: 1px solid var(--border-color); overscroll-behavior-x: contain; touch-action: pan-x; }
+        .prose { max-width: 65ch; margin: 0 auto; font-size: 1.25rem; }
+        .prose h1 { font-size: 2.75rem; font-weight: 800; margin-top: 2rem; margin-bottom: 1rem; color: inherit; }
+        .prose h2 { font-size: 2rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.75rem; color: inherit; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
+        .prose h3 { font-size: 1.5rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: inherit; }
+        .prose p { margin-top: 1rem; margin-bottom: 1rem; line-height: 1.75; color: inherit; opacity: 0.9; text-indent: 2em; }
+        .prose table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; margin-bottom: 1.5rem; font-size: 1.125rem; background: var(--card-bg); color: var(--text-color); }
+        .table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1.5rem 0; border-radius: 0.5rem; border: 1px solid var(--border-color); overscroll-behavior-x: contain; }
         .prose table { margin: 0; border: none; }
-        .chart-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 2rem 0; padding: 1rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid var(--border-color); overscroll-behavior-x: contain; touch-action: pan-x; }
+        .chart-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 2rem 0; padding: 1rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid var(--border-color); overscroll-behavior-x: contain; }
         .chart-container { min-width: 600px; height: 400px; position: relative; }
         .prose th { background-color: var(--table-header-bg); border: 1px solid var(--border-color); padding: 0.75rem; text-align: left; font-weight: 600; color: var(--text-color); }
         .prose td { border: 1px solid var(--border-color); padding: 0.75rem; color: var(--text-color); }
@@ -585,7 +621,7 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
-    <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 py-4 px-6 mb-8">
+    <nav class="sticky top-0 z-50 bg-white/90 border-b border-slate-200 py-4 px-6 mb-8">
         <div class="max-w-5xl mx-auto flex justify-between items-center">
             <div class="flex items-center space-x-2">
                 <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">DR</div>
@@ -846,7 +882,17 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
             });
 
             // 检查标签是否像年份/时间序列
-            const isTimeSeries = labels.every(label => /^(20\d{2}|19\d{2})(年|Q[1-4]|-[0-1]\d)?$/.test(label) || /^第[一二三四1-4]季度$/.test(label));
+            const isTimeSeries = labels.length > 0 && labels.every(label => {
+                const l = label.trim();
+                return /^(20\d{2}|19\d{2})/.test(l) || 
+                       /^([1-9]|1[0-2])月/.test(l) || 
+                       /^第[一二三四1-4]季度/.test(l) ||
+                       /^Q[1-4]/i.test(l) ||
+                       /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(l) ||
+                       /^\d{4}-\d{2}/.test(l) ||
+                       /^\d{4}年\d{1,2}月/.test(l) ||
+                       /^\d{4}\.\d{1,2}/.test(l);
+            });
 
             // 寻找数值列 (排除标签列)
             const numericCols = [];
@@ -886,6 +932,18 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
                 chartWrapper.appendChild(container);
                 wrapper.parentNode.insertBefore(chartWrapper, wrapper.nextSibling);
 
+                // 决定图表类型
+                let chartType = 'bar';
+                let indexAxis = 'x';
+                if (isTimeSeries) {
+                    chartType = 'line';
+                } else if (numericCols.length === 1 && labels.length <= 8 && labels.length >= 2) {
+                    chartType = 'doughnut';
+                } else if (labels.length > 8 && !isTimeSeries) {
+                    chartType = 'bar';
+                    indexAxis = 'y';
+                }
+
                 // 预设一些好看的颜色组合 (Tailwind 风格)
                 const colors = [
                     { bg: 'rgba(59, 130, 246, 0.2)', border: 'rgb(59, 130, 246)' }, // Blue
@@ -893,10 +951,25 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
                     { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgb(245, 158, 11)' }, // Amber
                     { bg: 'rgba(139, 92, 246, 0.2)', border: 'rgb(139, 92, 246)' }, // Violet
                     { bg: 'rgba(236, 72, 153, 0.2)', border: 'rgb(236, 72, 153)' }, // Pink
+                    { bg: 'rgba(14, 165, 233, 0.2)', border: 'rgb(14, 165, 233)' }, // Sky
+                    { bg: 'rgba(249, 115, 22, 0.2)', border: 'rgb(249, 115, 22)' }, // Orange
+                    { bg: 'rgba(168, 85, 247, 0.2)', border: 'rgb(168, 85, 247)' }, // Purple
+                    { bg: 'rgba(20, 184, 166, 0.2)', border: 'rgb(20, 184, 166)' }, // Teal
+                    { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgb(239, 68, 68)' },   // Red
                 ];
 
+                const isDoughnut = chartType === 'doughnut' || chartType === 'pie';
+
                 const datasets = numericCols.map((colIdx, i) => {
-                    const color = colors[i % colors.length];
+                    let bgColors, borderColors;
+                    if (isDoughnut) {
+                        bgColors = labels.map((_, idx) => colors[idx % colors.length].bg.replace('0.2', '0.7'));
+                        borderColors = labels.map((_, idx) => colors[idx % colors.length].border);
+                    } else {
+                        bgColors = colors[i % colors.length].bg;
+                        borderColors = colors[i % colors.length].border;
+                    }
+                    
                     return {
                         label: headers[colIdx],
                         data: dataRows.map(row => {
@@ -908,16 +981,13 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
                             const val = parseFloat(cleanText);
                             return isNaN(val) ? null : val;
                         }),
-                        backgroundColor: color.bg,
-                        borderColor: color.border,
+                        backgroundColor: bgColors,
+                        borderColor: borderColors,
                         borderWidth: 2,
                         tension: 0.3, // 平滑曲线
-                        fill: isTimeSeries && numericCols.length === 1 // 只有单条线时才填充面积
+                        fill: chartType === 'line' && numericCols.length === 1 // 只有单条线时才填充面积
                     };
                 });
-
-                // 决定图表类型
-                const chartType = isTimeSeries ? 'line' : 'bar';
                 
                 // 尝试获取表格上方的标题
                 let chartTitle = '数据可视化: ' + headers[0] + '相关数据';
@@ -935,6 +1005,7 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
                     type: chartType,
                     data: { labels, datasets },
                     options: {
+                        indexAxis: indexAxis,
                         responsive: true,
                         maintainAspectRatio: false,
                         interaction: {
@@ -943,7 +1014,7 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
                         },
                         plugins: {
                             legend: { 
-                                position: 'top',
+                                position: isDoughnut ? 'right' : 'top',
                                 labels: { font: { family: "'Inter', 'Noto Sans SC', sans-serif" } }
                             },
                             title: { 
@@ -959,13 +1030,20 @@ const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string,
                                 cornerRadius: 8
                             }
                         },
-                        scales: {
+                        scales: isDoughnut ? undefined : {
                             y: {
-                                beginAtZero: true,
-                                grid: { color: 'rgba(243, 244, 246, 1)' }
+                                beginAtZero: indexAxis === 'x',
+                                grid: { 
+                                    display: indexAxis === 'x',
+                                    color: 'rgba(243, 244, 246, 1)' 
+                                }
                             },
                             x: {
-                                grid: { display: false }
+                                beginAtZero: indexAxis === 'y',
+                                grid: { 
+                                    display: indexAxis === 'y',
+                                    color: 'rgba(243, 244, 246, 1)'
+                                }
                             }
                         }
                     }
@@ -1123,7 +1201,7 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 2. 章节编号：本章是报告的第 ${i + 1} 章。请务必使用 Markdown 二级标题（##）作为本章的主标题，例如：“## 第 ${i + 1} 章：${chapter.chapter_title}”。本章内的所有子标题请使用三级（###）或四级（####）标题。
 3. 深度剖析：严禁简单的信息堆砌。你必须对搜集到的信息进行“链条式整合”，分析不同现象之间的因果关系、行业底层逻辑以及未来的演进趋势。
 4. 行业洞察：融入你作为资深专家的行业思考，对技术瓶颈、市场博弈、政策导向进行深度推演。
-5. 可视化图表：请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格。**严禁使用 Mermaid 语法**。在表格前必须提供一个描述性的三级标题（如：### [此处填写与本章主题相关的图表标题]），以便系统自动生成图表标题。合理使用三级/四级标题、加粗、引用块等元素。
+5. 可视化图表：请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格。**严禁使用 Mermaid 语法**。在表格前必须提供一个描述性的标题（使用标准的 Markdown 三级或四级标题，例如：### 2025年市场规模对比），以便系统自动生成图表标题。请根据数据类型提供不同结构的表格，例如：时间序列数据（年份/月份/季度作为第一列）、占比数据（单列数值，分类少于8个）、多维对比数据等，以便系统自动渲染为折线图、饼图或柱状图。注意：标题标记（#）不要重复，例如绝对不要写成“### ### 标题”或“#### ### 标题”。
 6. 案例分析格式：若涉及案例研究，请使用“【案例分析】”标识，并采用缩进或引用块（>）形式突出显示，包含：背景、核心举措、成效评估、启示。
 7. 数据标注规范：
    - 数据引用：所有关键数据必须在句末使用方括号上标形式标注，如 [1]、[2]。
@@ -1154,6 +1232,12 @@ ${searchResults}`;
         let finalContent = content;
         // 强制确保章节标题是二级标题 (##)
         finalContent = finalContent.replace(/^(#|###|####)\s+(第\s*\d+\s*章.*)/m, '## $2');
+        // 修复重复的标题标记，如 "### ### 标题"
+        finalContent = finalContent.replace(/^ {0,3}(#{1,6})\s+#{1,6}\s+/gm, '$1 ');
+        // 修复缺少空格的标题标记，如 "###标题"
+        finalContent = finalContent.replace(/^ {0,3}(#{1,6})([^#\s])/gm, '$1 $2');
+        // 修复被加粗的标题标记，如 "**### 标题**"
+        finalContent = finalContent.replace(/^ {0,3}\*\*(#{1,6})\s+(.*?)\*\*/gm, '$1 **$2**');
         if (!finalContent.includes(chapter.chapter_title)) {
           finalContent = `## 第 ${i + 1} 章：${chapter.chapter_title}\n\n${finalContent}`;
         }
@@ -1188,11 +1272,11 @@ ${searchResults}`;
     
     // 生成 HTML 报告
     let htmlPath = '';
+    const nowIso = new Date().toISOString();
     try {
       const markdown = fs.readFileSync(filePath, 'utf8');
       const feishuUrl = feishuDocId ? `https://bytedance.feishu.cn/docx/${feishuDocId}` : undefined;
-      const createdAt = db.prepare('SELECT created_at FROM tasks WHERE id = ?').get(taskId) as any;
-      const htmlContent = generateHtmlReport(outline.report_title, markdown, feishuUrl, createdAt?.created_at);
+      const htmlContent = generateHtmlReport(outline.report_title, markdown, feishuUrl, nowIso);
       htmlPath = filePath.replace('.md', '.html');
       fs.writeFileSync(htmlPath, htmlContent);
       broadcastLog(taskId, `🌐 交互式 HTML 报告已生成。`, 'success');
@@ -1202,8 +1286,8 @@ ${searchResults}`;
 
     // 存入数据库
     try {
-      db.prepare('INSERT INTO reports (id, title, topic, user, feishu_url, html_path, md_path) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(taskId, outline.report_title, topic, user, feishuDocId ? `https://bytedance.feishu.cn/docx/${feishuDocId}` : null, htmlPath, filePath);
+      db.prepare('INSERT INTO reports (id, title, topic, user, feishu_url, html_path, md_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(taskId, outline.report_title, topic, user, feishuDocId ? `https://bytedance.feishu.cn/docx/${feishuDocId}` : null, htmlPath, filePath, nowIso);
     } catch (e: any) {
       logger.error(`Failed to save report to database: ${e.message}`);
     }
@@ -1639,7 +1723,7 @@ app.post('/api/auth/login', (req, res) => {
     { expiresIn: '7d' }
   );
 
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role, quota: user.quota, mustChangePassword: user.must_change_password === 1 } });
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role, quota: user.quota, daily_limit: user.daily_limit, total_quota: user.total_quota, used_quota: user.used_quota, daily_used: user.daily_used, mustChangePassword: user.must_change_password === 1 } });
 });
 
 app.post('/api/auth/change-password', authenticateToken, (req: any, res: any) => {
@@ -1663,17 +1747,20 @@ app.post('/api/auth/change-password', authenticateToken, (req: any, res: any) =>
 
 // User Management API (Admin Only)
 app.get('/api/users', authenticateToken, requireAdmin, (req, res) => {
-  const users = db.prepare('SELECT id, username, role, quota, created_at FROM users').all();
+  const users = db.prepare('SELECT id, username, role, quota, daily_limit, total_quota, used_quota, daily_used, created_at FROM users').all();
   res.json(users);
 });
 
 app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
-  const { username, password, role, quota } = req.body;
+  const { username, password, role, quota, daily_limit, total_quota } = req.body;
   try {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(password, salt);
-    db.prepare('INSERT INTO users (id, username, password_hash, salt, role, must_change_password, quota) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(crypto.randomUUID(), username, hash, salt, role || 'user', 0, quota !== undefined ? quota : 3);
+    const dl = daily_limit !== undefined ? daily_limit : 3;
+    const tq = total_quota !== undefined ? total_quota : 10;
+    const q = quota !== undefined ? quota : tq;
+    db.prepare('INSERT INTO users (id, username, password_hash, salt, role, must_change_password, quota, daily_limit, total_quota, used_quota, daily_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(crypto.randomUUID(), username, hash, salt, role || 'user', 0, q, dl, tq, 0, 0);
     logger.info(`Admin created new user: ${username}`);
     res.json({ success: true });
   } catch (e: any) {
@@ -1682,10 +1769,35 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
 });
 
 app.put('/api/users/:id/quota', authenticateToken, requireAdmin, (req: any, res: any) => {
-  const { quota } = req.body;
+  const { quota, daily_limit, total_quota } = req.body;
   if (typeof quota !== 'number') return res.status(400).json({ error: 'Invalid quota' });
-  db.prepare('UPDATE users SET quota = ? WHERE id = ?').run(quota, req.params.id);
-  logger.info(`Admin updated quota for user ${req.params.id} to ${quota}`);
+  const dl = daily_limit !== undefined ? daily_limit : 3;
+  const tq = total_quota !== undefined ? total_quota : 10;
+  
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as any;
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  
+  // If total_quota changed but quota didn't (meaning the admin only updated total_quota in the UI)
+  let newQuota = quota;
+  if (quota === user.quota && tq !== user.total_quota) {
+    const diff = tq - user.total_quota;
+    newQuota = user.quota + diff;
+  }
+  
+  db.prepare('UPDATE users SET quota = ?, daily_limit = ?, total_quota = ? WHERE id = ?').run(newQuota, dl, tq, req.params.id);
+  logger.info(`Admin updated quota for user ${req.params.id} to quota=${newQuota}, daily_limit=${dl}, total_quota=${tq}`);
+  res.json({ success: true });
+});
+
+app.put('/api/users/:id/password', authenticateToken, requireAdmin, (req: any, res: any) => {
+  const { newPassword } = req.body;
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: '密码长度至少为 6 位' });
+  }
+  const newSalt = crypto.randomBytes(16).toString('hex');
+  const newHash = hashPassword(newPassword, newSalt);
+  db.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE id = ?').run(newHash, newSalt, req.params.id);
+  logger.info(`Admin changed password for user ${req.params.id}`);
   res.json({ success: true });
 });
 
@@ -1721,10 +1833,23 @@ app.post('/api/research', authenticateToken, (req, res) => {
 
     const taskId = Date.now().toString();
     const user = (req as any).user.username;
-    const userData = db.prepare('SELECT quota FROM users WHERE username = ?').get(user) as any;
     
-    if (userData && userData.quota <= 0) {
-      return res.status(403).json({ error: '您的报告生成额度已用完，请联系管理员充值。' });
+    const today = new Date().toISOString().split('T')[0];
+    const userData = db.prepare('SELECT quota, daily_limit, total_quota, used_quota, daily_used, last_reset_date FROM users WHERE username = ?').get(user) as any;
+    
+    if (userData) {
+      if (userData.last_reset_date !== today) {
+        userData.daily_used = 0;
+        db.prepare('UPDATE users SET daily_used = 0, last_reset_date = ? WHERE username = ?').run(today, user);
+      }
+
+      if (userData.quota <= 0) {
+        return res.status(403).json({ error: '您的报告生成总额度已用完，请联系管理员充值。' });
+      }
+
+      if (userData.daily_used >= userData.daily_limit) {
+        return res.status(403).json({ error: '您今日的生成额度已达上限，请明天再来。' });
+      }
     }
     
     if (currentRunningTask) {
@@ -1734,7 +1859,7 @@ app.post('/api/research', authenticateToken, (req, res) => {
     }
 
     db.prepare('INSERT INTO tasks (id, topic, status) VALUES (?, ?, ?)').run(taskId, topic, 'running');
-    db.prepare('UPDATE users SET quota = quota - 1 WHERE username = ?').run(user);
+    db.prepare('UPDATE users SET quota = quota - 1, used_quota = used_quota + 1, daily_used = daily_used + 1 WHERE username = ?').run(user);
     
     logger.info(`User ${user} started research task: ${topic}`);
     runDeepResearch(taskId, topic, length, user);
@@ -1761,7 +1886,18 @@ app.get('/api/reports/:id/view', (req, res) => {
   try {
     const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(req.params.id) as any;
     if (report && report.md_path && fs.existsSync(report.md_path)) {
-      const markdown = fs.readFileSync(report.md_path, 'utf8');
+      let markdown = fs.readFileSync(report.md_path, 'utf8');
+      
+      // Fix malformed headings in the markdown file itself
+      const originalMarkdown = markdown;
+      markdown = markdown.replace(/^ {0,3}(#{1,6})\s+#{1,6}\s+/gm, '$1 ');
+      markdown = markdown.replace(/^ {0,3}(#{1,6})([^#\s])/gm, '$1 $2');
+      markdown = markdown.replace(/^ {0,3}\*\*(#{1,6})\s+(.*?)\*\*/gm, '$1 **$2**');
+      
+      if (markdown !== originalMarkdown) {
+        fs.writeFileSync(report.md_path, markdown);
+      }
+      
       const htmlContent = generateHtmlReport(report.title, markdown, report.feishu_url, report.created_at);
       res.setHeader('Content-Type', 'text/html');
       res.send(htmlContent);
@@ -1784,7 +1920,18 @@ app.get('/api/reports/:id/download', (req, res) => {
   try {
     const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(req.params.id) as any;
     if (report && report.md_path && fs.existsSync(report.md_path)) {
-      const markdown = fs.readFileSync(report.md_path, 'utf8');
+      let markdown = fs.readFileSync(report.md_path, 'utf8');
+      
+      // Fix malformed headings in the markdown file itself
+      const originalMarkdown = markdown;
+      markdown = markdown.replace(/^ {0,3}(#{1,6})\s+#{1,6}\s+/gm, '$1 ');
+      markdown = markdown.replace(/^ {0,3}(#{1,6})([^#\s])/gm, '$1 $2');
+      markdown = markdown.replace(/^ {0,3}\*\*(#{1,6})\s+(.*?)\*\*/gm, '$1 **$2**');
+      
+      if (markdown !== originalMarkdown) {
+        fs.writeFileSync(report.md_path, markdown);
+      }
+      
       const htmlContent = generateHtmlReport(report.title, markdown, report.feishu_url, report.created_at);
       if (report.html_path) {
         fs.writeFileSync(report.html_path, htmlContent);
@@ -1804,6 +1951,18 @@ app.get('/api/reports/:id/md', authenticateToken, (req, res) => {
   try {
     const report = db.prepare('SELECT md_path, title FROM reports WHERE id = ?').get(req.params.id) as any;
     if (report && report.md_path && fs.existsSync(report.md_path)) {
+      let markdown = fs.readFileSync(report.md_path, 'utf8');
+      
+      // Fix malformed headings in the markdown file itself
+      const originalMarkdown = markdown;
+      markdown = markdown.replace(/^ {0,3}(#{1,6})\s+#{1,6}\s+/gm, '$1 ');
+      markdown = markdown.replace(/^ {0,3}(#{1,6})([^#\s])/gm, '$1 $2');
+      markdown = markdown.replace(/^ {0,3}\*\*(#{1,6})\s+(.*?)\*\*/gm, '$1 **$2**');
+      
+      if (markdown !== originalMarkdown) {
+        fs.writeFileSync(report.md_path, markdown);
+      }
+      
       res.download(report.md_path, `${report.title}.md`);
     } else {
       res.status(404).send('Report not found');

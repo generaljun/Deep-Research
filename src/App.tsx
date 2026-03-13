@@ -35,50 +35,6 @@ const CHAT_STAGES = [
   { id: 5, title: '大纲定稿', desc: 'AI 总结并生成结构化 JSON 大纲', icon: Zap },
 ];
 
-function MagneticCursor() {
-  const cursorRef = useRef<HTMLDivElement>(null);
-  const dotRef = useRef<HTMLDivElement>(null);
-  
-  useEffect(() => {
-    let mouseX = 0;
-    let mouseY = 0;
-    let cursorX = 0;
-    let cursorY = 0;
-    
-    const moveCursor = (e: MouseEvent) => {
-      mouseX = e.clientX;
-      mouseY = e.clientY;
-      if (dotRef.current) {
-        dotRef.current.style.transform = `translate3d(${mouseX - 4}px, ${mouseY - 4}px, 0)`;
-      }
-    };
-    
-    const animate = () => {
-      cursorX += (mouseX - cursorX) * 0.2;
-      cursorY += (mouseY - cursorY) * 0.2;
-      if (cursorRef.current) {
-        cursorRef.current.style.transform = `translate3d(${cursorX - 16}px, ${cursorY - 16}px, 0)`;
-      }
-      requestAnimationFrame(animate);
-    };
-    
-    window.addEventListener('mousemove', moveCursor);
-    const animId = requestAnimationFrame(animate);
-    
-    return () => {
-      window.removeEventListener('mousemove', moveCursor);
-      cancelAnimationFrame(animId);
-    };
-  }, []);
-
-  return (
-    <>
-      <div ref={dotRef} className="fixed top-0 left-0 w-2 h-2 bg-cyan-400 rounded-full pointer-events-none z-[100] mix-blend-screen shadow-[0_0_10px_#22d3ee]" />
-      <div ref={cursorRef} className="fixed top-0 left-0 w-8 h-8 border border-blue-500 dark:border-cyan-500/50 rounded-full pointer-events-none z-[99] mix-blend-screen transition-transform duration-75 ease-out" />
-    </>
-  );
-}
-
 const AI_VENDORS = [
   { name: '阿里云百炼 (Qwen)', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-max', 'qwen-plus', 'qwen-coder-plus'] },
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini'] },
@@ -100,18 +56,13 @@ export default function App() {
   });
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [user, setUser] = useState<any>(JSON.parse(localStorage.getItem('user') || 'null'));
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark' | 'auto') || 'auto';
   });
   const [isInitialized, setIsInitialized] = useState<boolean | null>(null);
   const [taskStatus, setTaskStatus] = useState<{ running: any, queue: any[] } | null>(null);
   const [isDemoOpen, setIsDemoOpen] = useState(false);
-  const [showCursor, setShowCursor] = useState(() => {
-    const saved = localStorage.getItem('showCursor');
-    if (saved !== null) return saved === 'true';
-    // Default: true on desktop, false on mobile
-    return window.innerWidth > 768;
-  });
   const [selectedVendor, setSelectedVendor] = useState(AI_VENDORS[0].name);
   const [selectedSearch, setSelectedSearch] = useState(SEARCH_PROVIDERS[0].name);
   const [settings, setSettings] = useState<Record<string, string>>({
@@ -189,10 +140,6 @@ export default function App() {
     }
   }, [theme]);
 
-  useEffect(() => {
-    localStorage.setItem('showCursor', showCursor.toString());
-  }, [showCursor]);
-
   const handleLogin = (newToken: string, userData: any) => {
     localStorage.setItem('token', newToken);
     localStorage.setItem('user', JSON.stringify(userData));
@@ -223,10 +170,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#f8f9fa] dark:bg-[#030712] text-slate-800 dark:text-cyan-50 font-sans selection:bg-blue-200 dark:selection:bg-cyan-500/30 relative overflow-hidden transition-colors duration-500 pb-20 md:pb-0">
       <BackgroundPaths isGenerating={status === 'generating'} />
-      {showCursor && <MagneticCursor />}
       {/* Task Progress Bar */}
       {taskStatus && (taskStatus.running || taskStatus.queue.length > 0) && (
-        <div className="fixed bottom-0 left-0 w-full bg-white/90 dark:bg-[#0a0a0a]/90 border-t border-slate-200 dark:border-cyan-900/50 p-4 z-[100] backdrop-blur-md">
+        <div className="fixed bottom-0 left-0 w-full bg-white/90 dark:bg-[#0a0a0a]/90 border-t border-slate-200 dark:border-cyan-900/50 p-4 z-[100] ">
           <div className="max-w-7xl mx-auto">
             <div className="flex justify-between text-xs mb-2 font-medium">
               <span className="text-slate-600 dark:text-cyan-300">
@@ -264,7 +210,7 @@ export default function App() {
           <div className="flex gap-3 mb-6">
             <button 
               onClick={() => setIsDemoOpen(true)}
-              className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white text-xs font-bold px-5 py-2.5 rounded-full transition-all flex items-center gap-2 border border-white/20"
+              className="bg-white/10 hover:bg-white/20  text-white text-xs font-bold px-5 py-2.5 rounded-full transition-all flex items-center gap-2 border border-white/20"
             >
               <Play className="w-3.5 h-3.5 fill-current" /> 动画演示
             </button>
@@ -272,7 +218,7 @@ export default function App() {
               href="https://github.com/generaljun/Deep-Research"
               target="_blank"
               rel="noreferrer"
-              className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white text-xs font-bold px-5 py-2.5 rounded-full transition-all flex items-center gap-2 border border-white/20"
+              className="bg-white/10 hover:bg-white/20  text-white text-xs font-bold px-5 py-2.5 rounded-full transition-all flex items-center gap-2 border border-white/20"
             >
               <Github className="w-3.5 h-3.5" /> GitHub
             </a>
@@ -281,7 +227,7 @@ export default function App() {
           <h1 className="text-4xl md:text-6xl font-black tracking-tight text-white mb-4 transition-colors duration-500" style={{ fontFamily: "'Inter', sans-serif" }}>
             深度报告生成AI助手
           </h1>
-          <p className="text-blue-200/80 font-medium tracking-[0.2em] uppercase text-xs md:text-sm bg-blue-500/10 backdrop-blur-sm px-6 py-2 rounded-full border border-blue-400/20 shadow-xl transition-colors duration-500">
+          <p className="text-blue-200/80 font-medium tracking-[0.2em] uppercase text-xs md:text-sm bg-blue-500/10  px-6 py-2 rounded-full border border-blue-400/20 shadow-xl transition-colors duration-500">
             Minimalist · Intelligent · Research Engine
           </p>
         </div>
@@ -290,7 +236,7 @@ export default function App() {
       {isDemoOpen && <AnimationDemo onClose={() => setIsDemoOpen(false)} />}
 
       <div className="max-w-5xl mx-auto p-6 relative z-10 -mt-16">
-        <header className="flex flex-col md:flex-row items-center justify-between py-4 mb-8 gap-4 bg-white/80 dark:bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl p-4 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-cyan-900/20 border border-white/50 dark:border-cyan-900/50 transition-colors duration-500">
+        <header className="flex flex-col md:flex-row items-center justify-between py-4 mb-8 gap-4 bg-white/80 dark:bg-white/80 dark:bg-[#0a0a0a]/80  p-4 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-cyan-900/20 border border-white/50 dark:border-cyan-900/50 transition-colors duration-500">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-100 to-pink-100 dark:from-cyan-900 dark:to-blue-900 flex items-center justify-center shadow-inner dark:shadow-none dark:border dark:border-blue-200 dark:border-cyan-500/30 transition-colors duration-500">
               <Cpu className="text-blue-500 dark:text-cyan-400 w-6 h-6" />
@@ -336,14 +282,6 @@ export default function App() {
               </button>
             )}
             <div className="hidden md:block w-px h-6 bg-slate-200 dark:bg-cyan-900/50 mx-1"></div>
-            
-            <button
-              onClick={() => setShowCursor(!showCursor)}
-              title={showCursor ? "禁用磁性光标" : "启用磁性光标"}
-              className="p-2 rounded-xl bg-slate-100/50 dark:bg-cyan-950/30 border border-slate-100 dark:border-cyan-900/30 text-slate-500 dark:text-cyan-400 hover:text-blue-500 dark:hover:text-cyan-300 transition-all hidden md:block"
-            >
-              <Monitor className="w-4 h-4" />
-            </button>
 
             <div className="flex items-center bg-slate-100/50 dark:bg-[#0a0a0a]/50 rounded-xl p-1 ml-auto md:ml-0 shrink-0">
               <button
@@ -369,6 +307,12 @@ export default function App() {
               </button>
             </div>
             <button
+              onClick={() => setShowChangePassword(true)}
+              className="px-5 py-2 rounded-xl text-sm font-semibold text-blue-500 dark:text-cyan-400 hover:text-blue-600 dark:hover:text-cyan-300 hover:bg-blue-50 dark:hover:bg-cyan-900/20 transition-all duration-300"
+            >
+              修改密码
+            </button>
+            <button
               onClick={handleLogout}
               className="px-5 py-2 rounded-xl text-sm font-semibold text-red-500 dark:text-red-500 dark:text-red-400/80 hover:text-red-600 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-300"
             >
@@ -377,12 +321,26 @@ export default function App() {
           </div>
         </header>
 
-        {user?.mustChangePassword ? (
-          <ChangePasswordView token={token} onLogout={handleLogout} onPasswordChanged={() => {
-            const updatedUser = { ...user, mustChangePassword: false };
-            localStorage.setItem('user', JSON.stringify(updatedUser));
-            setUser(updatedUser);
-          }} />
+        {user?.mustChangePassword || showChangePassword ? (
+          <div className="relative">
+            {showChangePassword && !user?.mustChangePassword && (
+              <button 
+                onClick={() => setShowChangePassword(false)}
+                className="absolute top-0 right-0 z-10 text-slate-400 hover:text-slate-600 dark:hover:text-cyan-300 p-2"
+              >
+                返回
+              </button>
+            )}
+            <ChangePasswordView token={token} onLogout={handleLogout} isFirstLogin={user?.mustChangePassword} onPasswordChanged={() => {
+              if (user?.mustChangePassword) {
+                const updatedUser = { ...user, mustChangePassword: false };
+                localStorage.setItem('user', JSON.stringify(updatedUser));
+                setUser(updatedUser);
+              } else {
+                setShowChangePassword(false);
+              }
+            }} />
+          </div>
         ) : (
           <div className="relative">
             <div className={activeTab === 'generator' ? 'block' : 'hidden'}>
@@ -404,7 +362,7 @@ export default function App() {
 }
 
 function ReportsView({ token, user, onLogout, isActive }: { token: string, user: any, onLogout: () => void, isActive: boolean }) {
-  const [reports, setReports] = useState<{id: string, title: string, topic: string, feishu_url: string, html_path: string, created_at: string}[]>([]);
+  const [reports, setReports] = useState<{id: string, title: string, topic: string, user: string, feishu_url: string, html_path: string, created_at: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -498,7 +456,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-      <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-5 md:p-10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+      <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-5 md:p-10  shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl"></div>
         <h2 className="text-2xl font-bold mb-8 flex items-center gap-3 text-slate-800 dark:text-cyan-50">
           <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-cyan-950 border border-blue-200 dark:border-cyan-500/30 flex items-center justify-center">
@@ -541,6 +499,8 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
                     <h3 className="text-slate-700 dark:text-cyan-100 font-bold text-lg group-hover:text-slate-600 dark:text-cyan-300 transition-colors">{r.title}</h3>
                     <div className="text-xs text-blue-400 dark:text-slate-500 dark:text-cyan-500/60 mt-1 font-mono flex gap-3">
                       <span>课题: {r.topic}</span>
+                      <span>•</span>
+                      <span>生成者: {r.user || '未知'}</span>
                       <span>•</span>
                       <span>{new Date(r.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</span>
                     </div>
@@ -861,35 +821,50 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
         </div>
       )}
       {currentUser?.role !== 'admin' && (
-        <div className="bg-blue-100/10 dark:bg-cyan-900/10 border border-blue-200/50 dark:border-cyan-500/20 rounded-2xl p-4 flex items-center gap-3 text-slate-700 dark:text-cyan-100 shadow-sm backdrop-blur-sm">
-          <div className="flex items-center gap-2 text-sm font-medium opacity-80">
-            <Database className="w-4 h-4 text-blue-500 dark:text-cyan-400" /> 
-            您的剩余生成额度
+        <div className="bg-blue-100/10 dark:bg-cyan-900/10 border border-blue-200/50 dark:border-cyan-500/20 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center gap-4 text-slate-700 dark:text-cyan-100 shadow-sm justify-between">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium opacity-80">
+                <Database className="w-4 h-4 text-blue-500 dark:text-cyan-400" /> 
+                您的剩余生成额度
+              </div>
+              <motion.div 
+                animate={{ 
+                  scale: [1, 1.1, 1],
+                  rotate: [0, 2, -2, 0],
+                }}
+                transition={{ 
+                  duration: 3,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+                className="flex items-baseline gap-1"
+              >
+                <span className="font-black text-4xl text-transparent bg-clip-text bg-gradient-to-br from-blue-500 to-indigo-600 dark:from-cyan-400 dark:to-blue-500 drop-shadow-sm">
+                  {currentUser?.quota}
+                </span>
+                <span className="text-xs font-bold opacity-40">次</span>
+              </motion.div>
+            </div>
+            <div className="hidden md:block w-px h-8 bg-slate-200 dark:bg-cyan-900/50"></div>
+            <div className="flex flex-col gap-1 text-xs">
+              <div className="flex items-center gap-2 opacity-80">
+                <span className="w-2 h-2 rounded-full bg-blue-400 dark:bg-cyan-500"></span>
+                每日最大生成报告数：<strong className="text-blue-600 dark:text-cyan-300">{currentUser?.daily_limit}</strong> 次
+              </div>
+              <div className="flex items-center gap-2 opacity-80">
+                <span className="w-2 h-2 rounded-full bg-indigo-400 dark:bg-blue-500"></span>
+                今日已生成：<strong className="text-indigo-600 dark:text-blue-300">{currentUser?.daily_used}</strong> 次
+              </div>
+            </div>
           </div>
-          <motion.div 
-            animate={{ 
-              scale: [1, 1.1, 1],
-              rotate: [0, 2, -2, 0],
-            }}
-            transition={{ 
-              duration: 3,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-            className="flex items-baseline gap-1"
-          >
-            <span className="font-black text-4xl text-transparent bg-clip-text bg-gradient-to-br from-blue-500 to-indigo-600 dark:from-cyan-400 dark:to-blue-500 drop-shadow-sm">
-              {currentUser?.quota}
-            </span>
-            <span className="text-xs font-bold opacity-40">次</span>
-          </motion.div>
         </div>
       )}
       {step === 1 && (
         <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 rounded-3xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-            <div className="relative bg-white/80 dark:bg-[#0a0a0a]/80 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-8 md:p-10 backdrop-blur-xl shadow-2xl">
+            <div className="relative bg-white/80 dark:bg-[#0a0a0a]/80 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-8 md:p-10  shadow-2xl">
               <div className="flex items-center gap-4 mb-8 pb-6 border-b border-slate-100 dark:border-cyan-900/30">
                 <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-cyan-950 border border-blue-200 dark:border-cyan-500/30 flex items-center justify-center shadow-sm dark:shadow-[0_0_15px_rgba(6,182,212,0.2)]">
                   <Target className="w-6 h-6 text-blue-500 dark:text-cyan-400" />
@@ -991,7 +966,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
 
       {step === 2 && (
         <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-          <div className="flex flex-col h-[calc(100dvh-120px)] md:h-[750px] bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl overflow-hidden backdrop-blur-xl shadow-2xl relative">
+          <div className="flex flex-col h-[calc(100dvh-120px)] md:h-[750px] bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl overflow-hidden  shadow-2xl relative">
             
             {/* Top Progress Bar */}
             <div className="absolute top-0 left-0 w-full h-1 bg-blue-50 dark:bg-cyan-950">
@@ -1070,10 +1045,10 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
 
                 return (
                   <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] rounded-2xl px-6 py-4 text-sm leading-relaxed shadow-lg ${
+                    <div className={`max-w-[85%] rounded-2xl px-6 py-4 text-sm leading-relaxed shadow-lg whitespace-pre-wrap break-words ${
                       msg.role === 'user' 
                         ? 'bg-gradient-to-br from-cyan-800 to-blue-900 text-slate-800 dark:text-cyan-50 rounded-tr-sm border border-cyan-700/50' 
-                        : 'bg-slate-50 dark:bg-[#030712]/80 border border-slate-200 dark:border-cyan-900/50 text-slate-700 dark:text-cyan-100 rounded-tl-sm backdrop-blur-md'
+                        : 'bg-slate-50 dark:bg-[#030712]/80 border border-slate-200 dark:border-cyan-900/50 text-slate-700 dark:text-cyan-100 rounded-tl-sm '
                     }`}>
                       {msg.content}
                     </div>
@@ -1082,7 +1057,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
               })}
               {loading && (
                 <div className="flex justify-start">
-                  <div className="bg-slate-50 dark:bg-[#030712]/80 border border-slate-200 dark:border-cyan-900/50 rounded-2xl rounded-tl-sm px-6 py-4 flex items-center gap-3 backdrop-blur-md">
+                  <div className="bg-slate-50 dark:bg-[#030712]/80 border border-slate-200 dark:border-cyan-900/50 rounded-2xl rounded-tl-sm px-6 py-4 flex items-center gap-3 ">
                     <div className="flex gap-1">
                       <span className="w-2 h-2 rounded-full bg-cyan-500 animate-bounce"></span>
                       <span className="w-2 h-2 rounded-full bg-cyan-500 animate-bounce delay-75"></span>
@@ -1122,10 +1097,10 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                           if (input.trim() && !loading) sendMessage(input);
                         }
                       }}
-                      placeholder="输入你的补充要求..."
+                      placeholder="参考回答模板：\n1. 研究范围：XXXX\n2. 时间跨度：XXXX\n3. 重点分析企业/技术：XXXX\n4. 数据来源要求：XXXX\n5. 其他补充：XXXX"
                       disabled={loading}
-                      rows={1}
-                      className="w-full bg-transparent pl-5 pr-12 py-4 text-sm text-slate-800 dark:text-cyan-50 placeholder:text-blue-800 dark:text-cyan-800 focus:outline-none disabled:opacity-50 resize-none overflow-hidden"
+                      rows={6}
+                      className="w-full bg-transparent pl-5 pr-12 py-4 text-sm text-slate-800 dark:text-cyan-50 placeholder:text-slate-400 dark:placeholder:text-cyan-800/70 focus:outline-none disabled:opacity-50 resize-none overflow-y-auto max-h-64 whitespace-pre-wrap break-words"
                     />
                     <button
                       onClick={() => input.trim() && sendMessage(input)}
@@ -1144,7 +1119,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
 
       {step === 3 && outline && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
-          <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-5 md:p-10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+          <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-5 md:p-10  shadow-2xl relative overflow-hidden">
             {/* Decorative background */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl"></div>
             
@@ -1190,7 +1165,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                           setOutline({...outline, chapters: newChapters});
                         }}
                         rows={2}
-                        className="w-full bg-transparent text-sm text-blue-400 dark:text-slate-500 dark:text-cyan-500/70 leading-relaxed outline-none focus:text-slate-400 resize-none disabled:opacity-70"
+                        className="w-full bg-transparent text-sm text-blue-400 dark:text-slate-500 dark:text-cyan-500/70 leading-relaxed outline-none focus:text-slate-400 resize-y min-h-[60px] overflow-y-auto disabled:opacity-70"
                       />
                     </div>
                   </div>
@@ -1258,7 +1233,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
       )}
 
       {(status === 'generating' || status === 'done' || taskId) && (
-        <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl overflow-hidden backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-700">
+        <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl overflow-hidden  shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-700">
           <div className="p-5 border-b border-slate-100 dark:border-cyan-900/30 bg-slate-50 dark:bg-[#030712] flex flex-col gap-4">
             <div className="flex justify-between items-center">
               <h2 className="font-bold flex items-center gap-3 text-sm text-slate-700 dark:text-cyan-100">
@@ -1415,7 +1390,8 @@ function AdminView({ token, settings, handleChange, setSettings, onLogout, isAct
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('user');
-  const [newQuota, setNewQuota] = useState(3);
+  const [newDailyLimit, setNewDailyLimit] = useState(3);
+  const [newTotalQuota, setNewTotalQuota] = useState(10);
   const [logs, setLogs] = useState<any[]>([]);
   const [versionInfo, setVersionInfo] = useState<{ currentVersion: string, remoteVersion: string, hasUpdate: boolean, repoUrl: string } | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -1615,12 +1591,13 @@ function AdminView({ token, settings, handleChange, setSettings, onLogout, isAct
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ username: newUsername, password: newPassword, role: newRole, quota: newQuota })
+        body: JSON.stringify({ username: newUsername, password: newPassword, role: newRole, daily_limit: newDailyLimit, total_quota: newTotalQuota })
       });
       if (res.ok) {
         setNewUsername('');
         setNewPassword('');
-        setNewQuota(3);
+        setNewDailyLimit(3);
+        setNewTotalQuota(10);
         fetchUsers();
         showToast('用户创建成功', 'success');
       } else {
@@ -1650,7 +1627,7 @@ function AdminView({ token, settings, handleChange, setSettings, onLogout, isAct
     }
   };
 
-  const handleUpdateQuota = async (id: string, quota: number) => {
+  const handleUpdateQuota = async (id: string, quota: number, daily_limit: number, total_quota: number) => {
     try {
       const res = await fetch(`/api/users/${id}/quota`, {
         method: 'PUT',
@@ -1658,10 +1635,34 @@ function AdminView({ token, settings, handleChange, setSettings, onLogout, isAct
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ quota })
+        body: JSON.stringify({ quota, daily_limit, total_quota })
       });
       if (res.ok) fetchUsers();
       else showToast('更新额度失败', 'error');
+    } catch (e) {
+      showToast('请求失败', 'error');
+    }
+  };
+
+  const handleChangePassword = async (id: string) => {
+    const newPassword = prompt('请输入新密码 (至少6位):');
+    if (!newPassword) return;
+    if (newPassword.length < 6) return showToast('密码长度至少为 6 位', 'error');
+    try {
+      const res = await fetch(`/api/users/${id}/password`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ newPassword })
+      });
+      if (res.ok) {
+        showToast('密码修改成功', 'success');
+      } else {
+        const data = await res.json();
+        showToast(data.error || '修改失败', 'error');
+      }
     } catch (e) {
       showToast('请求失败', 'error');
     }
@@ -1689,7 +1690,7 @@ const handleSearchChange = (searchName: string) => {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
-      <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-5 md:p-10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+      <div className="bg-white/90 dark:bg-[#0a0a0a]/90 border border-slate-200 dark:border-cyan-900/50 rounded-3xl p-5 md:p-10  shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl"></div>
         
         <div className="flex items-center justify-between mb-8 relative z-10">
@@ -1891,7 +1892,8 @@ const handleSearchChange = (searchName: string) => {
                     <option value="user">普通用户</option>
                     <option value="admin">管理员</option>
                   </select>
-                  <input type="number" placeholder="生成额度" value={newQuota} onChange={e => setNewQuota(parseInt(e.target.value))} className="w-24 bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-500 outline-none" min="0" />
+                  <input type="number" placeholder="每日最大报告数" value={newDailyLimit} onChange={e => setNewDailyLimit(parseInt(e.target.value))} className="w-32 bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-500 outline-none" min="0" />
+                  <input type="number" placeholder="总额度" value={newTotalQuota} onChange={e => setNewTotalQuota(parseInt(e.target.value))} className="w-24 bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-500 outline-none" min="0" />
                   <button onClick={handleAddUser} className="bg-blue-100/50 dark:bg-cyan-900/50 text-slate-600 dark:text-cyan-300 border border-cyan-700 px-4 py-2 rounded-lg text-sm hover:bg-cyan-800 transition-colors">添加</button>
                 </div>
               </div>
@@ -1902,8 +1904,9 @@ const handleSearchChange = (searchName: string) => {
                     <tr>
                       <th className="px-4 py-3">用户名</th>
                       <th className="px-4 py-3">角色</th>
-                      <th className="px-4 py-3">剩余额度</th>
-                      <th className="px-4 py-3">创建时间</th>
+                      <th className="px-4 py-3">每日最大报告数</th>
+                      <th className="px-4 py-3">总额度</th>
+                      <th className="px-4 py-3">已生成报告数</th>
                       <th className="px-4 py-3 text-right">操作</th>
                     </tr>
                   </thead>
@@ -1923,16 +1926,16 @@ const handleSearchChange = (searchName: string) => {
                             <div className="flex items-center gap-2">
                               <input 
                                 type="number" 
-                                value={u.quota === null || u.quota === undefined ? 0 : u.quota}
+                                value={u.daily_limit === null || u.daily_limit === undefined ? 0 : u.daily_limit}
                                 onChange={(e) => {
                                   const val = e.target.value === '' ? '' : parseInt(e.target.value);
-                                  setUsers(users.map(user => user.id === u.id ? { ...user, quota: val } : user));
+                                  setUsers(users.map(user => user.id === u.id ? { ...user, daily_limit: val } : user));
                                 }}
                                 onBlur={(e) => {
                                   let val = parseInt(e.target.value);
                                   if (isNaN(val)) val = 0;
-                                  handleUpdateQuota(u.id, val);
-                                  setUsers(users.map(user => user.id === u.id ? { ...user, quota: val } : user));
+                                  handleUpdateQuota(u.id, u.quota, val, u.total_quota);
+                                  setUsers(users.map(user => user.id === u.id ? { ...user, daily_limit: val } : user));
                                 }}
                                 className="w-16 bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded px-2 py-1 text-xs text-slate-700 dark:text-cyan-100 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-500 outline-none"
                                 min="0"
@@ -1940,17 +1943,46 @@ const handleSearchChange = (searchName: string) => {
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-blue-400 dark:text-slate-500 dark:text-cyan-500/70">{new Date(u.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</td>
-                        <td className="px-4 py-3 text-right">
-                          {confirmState?.type === 'deleteUser' && confirmState.id === u.id ? (
-                            <div className="flex items-center justify-end gap-1">
-                              <button onClick={() => handleDeleteUser(u.id)} className="text-red-500 font-bold text-xs">确定</button>
-                              <span className="text-slate-400">/</span>
-                              <button onClick={() => setConfirmState(null)} className="text-slate-400 text-xs">取消</button>
-                            </div>
+                        <td className="px-4 py-3">
+                          {u.role === 'admin' ? (
+                            <span className="text-blue-400 dark:text-slate-400 dark:text-cyan-500/50 text-xs">无限</span>
                           ) : (
-                            <button onClick={() => setConfirmState({ type: 'deleteUser', id: u.id })} className="text-red-500 dark:text-red-400 hover:text-red-300 text-xs">删除</button>
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="number" 
+                                value={u.total_quota === null || u.total_quota === undefined ? 0 : u.total_quota}
+                                onChange={(e) => {
+                                  const val = e.target.value === '' ? '' : parseInt(e.target.value);
+                                  setUsers(users.map(user => user.id === u.id ? { ...user, total_quota: val } : user));
+                                }}
+                                onBlur={(e) => {
+                                  let val = parseInt(e.target.value);
+                                  if (isNaN(val)) val = 0;
+                                  handleUpdateQuota(u.id, u.quota, u.daily_limit, val);
+                                  setUsers(users.map(user => user.id === u.id ? { ...user, total_quota: val } : user));
+                                }}
+                                className="w-16 bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded px-2 py-1 text-xs text-slate-700 dark:text-cyan-100 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-500 outline-none"
+                                min="0"
+                              />
+                            </div>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 dark:text-cyan-100">
+                          {u.role === 'admin' ? '-' : (u.used_quota || 0)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-3">
+                            <button onClick={() => handleChangePassword(u.id)} className="text-blue-500 dark:text-cyan-400 hover:text-blue-400 text-xs">修改密码</button>
+                            {confirmState?.type === 'deleteUser' && confirmState.id === u.id ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => handleDeleteUser(u.id)} className="text-red-500 font-bold text-xs">确定</button>
+                                <span className="text-slate-400">/</span>
+                                <button onClick={() => setConfirmState(null)} className="text-slate-400 text-xs">取消</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setConfirmState({ type: 'deleteUser', id: u.id })} className="text-red-500 dark:text-red-400 hover:text-red-300 text-xs">删除</button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2240,7 +2272,7 @@ function LoginView({ onLogin }: { onLogin: (token: string, user: any) => void })
       <div className="absolute top-[-10%] left-[-5%] w-[40%] h-[40%] bg-blue-200/40 blur-[100px] rounded-full mix-blend-multiply pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-5%] w-[40%] h-[40%] bg-pink-200/40 blur-[100px] rounded-full mix-blend-multiply pointer-events-none"></div>
       
-      <div className="w-full max-w-4xl bg-white/80 border border-white/50 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-700 flex flex-col md:flex-row overflow-hidden backdrop-blur-xl">
+      <div className="w-full max-w-4xl bg-white/80 border border-white/50 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-700 flex flex-col md:flex-row overflow-hidden ">
         
         {/* Left Side: Animated Characters */}
         <div className="hidden md:flex md:w-1/2 bg-indigo-50/50 p-8 items-center justify-center border-r border-slate-100">
@@ -2322,16 +2354,18 @@ function LoginView({ onLogin }: { onLogin: (token: string, user: any) => void })
   );
 }
 
-function ChangePasswordView({ token, onLogout, onPasswordChanged }: { token: string, onLogout: () => void, onPasswordChanged: () => void }) {
+function ChangePasswordView({ token, onLogout, onPasswordChanged, isFirstLogin = false }: { token: string, onLogout: () => void, onPasswordChanged: () => void, isFirstLogin?: boolean }) {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     
     if (newPassword !== confirmPassword) {
       return setError('两次输入的新密码不一致');
@@ -2352,7 +2386,10 @@ function ChangePasswordView({ token, onLogout, onPasswordChanged }: { token: str
       });
       
       if (res.ok) {
-        onPasswordChanged();
+        setSuccess('密码修改成功！');
+        setTimeout(() => {
+          onPasswordChanged();
+        }, 1500);
       } else {
         const data = await res.json();
         setError(data.error || '修改失败');
@@ -2366,24 +2403,33 @@ function ChangePasswordView({ token, onLogout, onPasswordChanged }: { token: str
 
   return (
     <div className="max-w-md mx-auto mt-20 animate-in fade-in slide-in-from-bottom-8 duration-700">
-      <div className="bg-white/80 border border-white/50 rounded-[2rem] p-8 backdrop-blur-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
+      <div className="bg-white/80 border border-white/50 rounded-[2rem] p-8  shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-amber-100 rounded-full blur-2xl"></div>
         
         <h2 className="text-2xl font-bold text-slate-800 mb-2 flex items-center gap-2">
-          <AlertCircle className="w-6 h-6 text-amber-500" />
-          首次登录安全设置
+          {isFirstLogin ? <AlertCircle className="w-6 h-6 text-amber-500" /> : <Key className="w-6 h-6 text-blue-500" />}
+          {isFirstLogin ? '首次登录安全设置' : '修改密码'}
         </h2>
-        <p className="text-slate-500 text-sm mb-8">为了您的系统安全，请修改默认的管理员密码。</p>
+        <p className="text-slate-500 text-sm mb-8">
+          {isFirstLogin ? '为了您的系统安全，请修改默认的管理员密码。' : '请定期修改密码以保证账号安全。'}
+        </p>
         
         {error && (
           <div className="bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 text-red-500 dark:text-red-400 px-4 py-3 rounded-xl mb-6 text-sm">
             {error}
           </div>
         )}
+        {success && (
+          <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400 px-4 py-3 rounded-xl mb-6 text-sm">
+            {success}
+          </div>
+        )}
         
         <form onSubmit={handleSubmit} className="space-y-5 relative z-10">
           <div>
-            <label className="block text-xs font-medium text-blue-600 dark:text-cyan-600 mb-1.5">当前密码 (默认: admin)</label>
+            <label className="block text-xs font-medium text-blue-600 dark:text-cyan-600 mb-1.5">
+              当前密码 {isFirstLogin && '(默认: admin)'}
+            </label>
             <input 
               type="password" 
               value={oldPassword} 
