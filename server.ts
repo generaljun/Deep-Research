@@ -1182,7 +1182,7 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
       let searchResults = '';
       try {
         broadcastLog(taskId, `🌐 正在调用博查 API 检索素材...`);
-        searchResults = await withRetry(() => searchBocha(`${chapter.chapter_title} ${chapter.core_points}`));
+        searchResults = await withRetry(() => searchBocha(`${topic} ${chapter.chapter_title} ${chapter.core_points}`));
         broadcastLog(taskId, `✅ 检索完成，获取到有效参考素材。`, 'success');
       } catch (e: any) {
         const errCode = e.response?.status || e.code || 'UNKNOWN';
@@ -1194,10 +1194,10 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
         broadcastLog(taskId, `✍️ 正在调用撰稿人 (${modelWriter}) 撰写本章正文...`);
         const writerPrompt = `你是一位顶级的学术研究员与行业资深撰稿人。
 当前日期：2026年3月。请基于此时间背景，对未来趋势进行前瞻性预测。
-请根据【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
+请根据【课题名称】、【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
 
 【学术规范与行文要求】
-1. 严禁偏离主题：本章正文必须严格围绕【章节标题】和【核心论点】展开，严禁插入任何与本课题无关的内容（如AI大模型等，除非课题本身相关）。
+1. 严禁偏离主题：本章正文必须严格围绕【课题名称】、【章节标题】和【核心论点】展开，严禁插入任何与本课题无关的内容（如AI大模型、固态储氢、碳排放等，除非课题本身相关）。
 2. 章节编号：本章是报告的第 ${i + 1} 章。请务必使用 Markdown 二级标题（##）作为本章的主标题，例如：“## 第 ${i + 1} 章：${chapter.chapter_title}”。本章内的所有子标题请使用三级（###）或四级（####）标题。
 3. 深度剖析：严禁简单的信息堆砌。你必须对搜集到的信息进行“链条式整合”，分析不同现象之间的因果关系、行业底层逻辑以及未来的演进趋势。
 4. 行业洞察：融入你作为资深专家的行业思考，对技术瓶颈、市场博弈、政策导向进行深度推演。
@@ -1214,6 +1214,7 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
    [2] 权威新闻网. 行业最新动态观察 [EB/OL]. (2026-01-15) [2026-03-12]. http://...
 9. 严禁废话：直接输出正文，绝对不要输出任何开场白或结束语。
 
+课题名称：${topic}
 章节标题：${chapter.chapter_title}
 核心论点：${chapter.core_points}
 
