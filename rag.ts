@@ -2,9 +2,7 @@ import axios from 'axios';
 import OpenAI from 'openai';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
-import { logger, getSetting, withRetry, getLLMClient, getProxyAgent } from './utils.js';
-
-export 
+import { logger, getSetting, withRetry, getLLMClient, getProxyAgent, streamLLMWithProgress } from './utils.js';
 
 // RAG & Vector Store Helpers
 // ==========================================
@@ -90,12 +88,16 @@ const generateDocumentSummary = async (text: string, title: string, broadcastLog
 ${truncatedText}`;
 
   try {
-    const res = await withRetry(() => client.chat.completions.create({
-      model: modelCritic,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-    }));
-    return res.choices[0].message.content || '';
+    const summary = await streamLLMWithProgress(
+      client,
+      modelCritic,
+      [{ role: 'user', content: prompt }],
+      0.3,
+      taskId || '',
+      broadcastLog,
+      `正在浓缩文档: ${title.substring(0, 15)}...`
+    );
+    return summary || '';
   } catch (e: any) {
     if (broadcastLog && taskId) {
       broadcastLog(taskId, `⚠️ 文档摘要生成失败 (${title}): ${e.message}`, 'warning');
@@ -205,7 +207,7 @@ const analyzeImageWithVLM = async (imageUrl: string, context: string, broadcastL
     
     const prompt = `你是一个专业的数据分析师。请提取这张数据图表中的所有关键数据，并转换为 Markdown 表格。如果这不是一张包含数据的图表（如纯装饰性图片、人像等），请直接回复“非数据图表”。\n上下文信息：${context}`;
     
-    const response = await client.chat.completions.create({
+    const response = await withRetry(() => client.chat.completions.create({
       model: modelVision,
       messages: [
         {
@@ -217,7 +219,7 @@ const analyzeImageWithVLM = async (imageUrl: string, context: string, broadcastL
         }
       ],
       temperature: 0.1,
-    });
+    }), 2, 2000, broadcastLog, taskId);
     
     const result = response.choices[0].message.content || '';
     if (result.includes('非数据图表') || result.trim() === '') return null;
@@ -293,6 +295,9 @@ export const buildKnowledgeBase = async (topic: string, outline: any, broadcastL
   const chunks: DocumentChunk[] = [];
   const batchSize = 10;
   for (let i = 0; i < uniqueResults.length; i += batchSize) {
+    if (broadcastLog && taskId) {
+      broadcastLog(taskId, `⏳ 正在抓取和解析第 ${i + 1} 到 ${Math.min(i + batchSize, uniqueResults.length)} 个参考链接...`, 'info');
+    }
     const batch = uniqueResults.slice(i, i + batchSize);
     const scrapePromises = batch.map(async (r: any) => {
       try {
@@ -406,6 +411,9 @@ export const buildSupplementalKnowledgeBase = async (queries: string[], broadcas
   const chunks: DocumentChunk[] = [];
   const batchSize = 5;
   for (let i = 0; i < uniqueResults.length; i += batchSize) {
+    if (broadcastLog && taskId) {
+      broadcastLog(taskId, `⏳ 正在补充抓取和解析第 ${i + 1} 到 ${Math.min(i + batchSize, uniqueResults.length)} 个参考链接...`, 'info');
+    }
     const batch = uniqueResults.slice(i, i + batchSize);
     const scrapePromises = batch.map(async (r: any) => {
       try {

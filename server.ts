@@ -38,7 +38,7 @@ import {
   logger, getSetting, setSetting, db, taskEvents, withRetry, appendLog, appendTaskLog,
   getLLMClient, getProxyAgent, sleep,   authenticateToken, requireAdmin, hashPassword, checkRateLimit,
   recordFailedLogin, resetLoginAttempts, broadcastSystemStatus, broadcastLog, 
-  currentRunningTask, setCurrentRunningTask, jwtSecret
+  currentRunningTask, setCurrentRunningTask, jwtSecret, streamLLMWithProgress
 } from './utils.js';
 import { buildKnowledgeBase, queryKnowledgeBase, buildSupplementalKnowledgeBase, DocumentChunk, searchBocha, createFeishuDoc, appendToFeishuDoc, generateHtmlReport, sendNotifications } from './rag.js';
 // 5. Core Deep Research Engine & Queue
@@ -90,13 +90,17 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 }`;
 
       try {
-        const plannerRes = await withRetry(() => getLLMClient('planner').chat.completions.create({
-          model: modelPlanner,
-          messages: [{ role: 'user', content: plannerPrompt }],
-          temperature: 0.1,
-        }), 3, 2000, broadcastLog, taskId);
+        const rawJsonRaw = await streamLLMWithProgress(
+          getLLMClient('planner'),
+          modelPlanner,
+          [{ role: 'user', content: plannerPrompt }],
+          0.1,
+          taskId,
+          broadcastLog,
+          '正在规划大纲'
+        );
 
-        let rawJson = plannerRes.choices[0].message.content || '';
+        let rawJson = rawJsonRaw || '';
         rawJson = rawJson.replace(/```json/g, '').replace(/```/g, '').trim();
         outline = JSON.parse(rawJson);
       } catch (e: any) {
@@ -150,13 +154,17 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 3. 给出具有前瞻性的战略建议。
 4. 篇幅约 500-800 字，直接输出正文，不要任何开场白。`;
 
-      const summaryRes = await withRetry(() => getLLMClient('writer').chat.completions.create({
-        model: modelWriter,
-        messages: [{ role: 'user', content: summaryPrompt }],
-        temperature: 0.5,
-      }), 3, 2000, broadcastLog, taskId);
+      const summaryText = await streamLLMWithProgress(
+        getLLMClient('writer'),
+        modelWriter,
+        [{ role: 'user', content: summaryPrompt }],
+        0.5,
+        taskId,
+        broadcastLog,
+        '正在撰写执行摘要'
+      );
       
-      const summaryContent = `## 执行摘要 (Executive Summary)\n\n${summaryRes.choices[0].message.content || ''}\n\n---\n\n`;
+      const summaryContent = `## 执行摘要 (Executive Summary)\n\n${summaryText}\n\n---\n\n`;
       fs.appendFileSync(filePath, summaryContent);
       if (feishuDocId) await appendToFeishuDoc(feishuDocId, summaryContent);
     } catch (e: any) {
@@ -202,13 +210,17 @@ ${searchResults}
   "new_queries": ["2025年 Q1 固态电池 市场规模", "2025年 宁德时代 固态电池 进展"]
 }`;
           try {
-            const researchRes = await withRetry(() => getLLMClient('critic').chat.completions.create({
-              model: modelCritic,
-              messages: [{ role: 'user', content: researchPrompt }],
-              temperature: 0.3,
-            }), 3, 2000, broadcastLog, taskId);
+            const researchResultStrRaw = await streamLLMWithProgress(
+              getLLMClient('critic'),
+              modelCritic,
+              [{ role: 'user', content: researchPrompt }],
+              0.3,
+              taskId,
+              broadcastLog,
+              `正在评估第 ${chapter.chapter_num} 章检索结果`
+            );
             
-            let researchResultStr = researchRes.choices[0].message.content || '{}';
+            let researchResultStr = researchResultStrRaw || '{}';
             const jsonMatch = researchResultStr.match(/\{[\s\S]*\}/);
             if (jsonMatch) researchResultStr = jsonMatch[0];
             const researchResult = JSON.parse(researchResultStr);
@@ -304,13 +316,15 @@ ${searchResults}`;
         while (retryCount <= maxRetries) {
           const currentWriterPrompt = writerPrompt + (criticFeedback ? `\n\n【审稿人修改意见】\n你之前生成的草稿存在以下问题，请严格按照以下意见进行修改重写：\n${criticFeedback}` : '');
           
-          const writerRes = await withRetry(() => getLLMClient('writer').chat.completions.create({
-            model: modelWriter,
-            messages: [{ role: 'user', content: currentWriterPrompt }],
-            temperature: 0.6,
-          }), 3, 2000, broadcastLog, taskId);
-
-          let content = writerRes.choices[0].message.content || '';
+          let content = await streamLLMWithProgress(
+            getLLMClient('writer'),
+            modelWriter,
+            [{ role: 'user', content: currentWriterPrompt }],
+            0.6,
+            taskId,
+            broadcastLog,
+            `正在撰写第 ${chapter.chapter_num} 章正文`
+          );
           
           // 防止标题重复：如果内容没有以 ## 开头，或者没有包含当前章节标题，则手动加上
           finalContent = content;
@@ -353,13 +367,17 @@ ${finalContent}
 }`;
 
           try {
-            const criticRes = await withRetry(() => getLLMClient('critic').chat.completions.create({
-              model: modelCritic,
-              messages: [{ role: 'user', content: criticPrompt }],
-              temperature: 0.1,
-            }), 3, 2000, broadcastLog, taskId);
+            const criticResultStrRaw = await streamLLMWithProgress(
+              getLLMClient('critic'),
+              modelCritic,
+              [{ role: 'user', content: criticPrompt }],
+              0.1,
+              taskId,
+              broadcastLog,
+              `正在审阅第 ${chapter.chapter_num} 章草稿`
+            );
             
-            let criticResultStr = criticRes.choices[0].message.content || '{}';
+            let criticResultStr = criticResultStrRaw || '{}';
             // 尝试提取 JSON
             const jsonMatch = criticResultStr.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
@@ -423,12 +441,15 @@ ${finalContent}
         try {
           broadcastLog(taskId, `📝 正在提取本章摘要，更新全局记忆库...`);
           const summaryPrompt = `请将以下报告章节内容压缩成150字左右的核心摘要，只保留最重要的结论和数据，用于后续章节的上下文记忆：\n\n${finalContent}`;
-          const summaryRes = await withRetry(() => getLLMClient('planner').chat.completions.create({
-            model: modelPlanner,
-            messages: [{ role: 'user', content: summaryPrompt }],
-            temperature: 0.3,
-          }), 3, 2000, broadcastLog, taskId);
-          const summary = summaryRes.choices[0].message.content || '';
+          const summary = await streamLLMWithProgress(
+            getLLMClient('planner'),
+            modelPlanner,
+            [{ role: 'user', content: summaryPrompt }],
+            0.3,
+            taskId,
+            broadcastLog,
+            `正在提取第 ${chapter.chapter_num} 章摘要`
+          );
           previousChapterSummaries.push({
             chapter: `第 ${i + 1} 章：${chapter.chapter_title}`,
             summary: summary.trim()

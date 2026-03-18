@@ -317,6 +317,47 @@ export const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 20
   throw new Error('Unreachable');
 };
 
+export const streamLLMWithProgress = async (
+  client: any,
+  model: string,
+  messages: any[],
+  temperature: number,
+  taskId: string,
+  broadcastLog: any,
+  progressPrefix: string,
+  retries = 3,
+  delay = 2000
+): Promise<string> => {
+  return await withRetry(async () => {
+    const stream = await client.chat.completions.create({
+      model,
+      messages,
+      temperature,
+      stream: true,
+    });
+
+    let fullContent = '';
+    let lastLogTime = Date.now();
+    let charCount = 0;
+    let recentText = '';
+
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content || '';
+      fullContent += text;
+      charCount += text.length;
+      recentText += text;
+      
+      if (Date.now() - lastLogTime > 5000) { // Log every 5 seconds
+        const snippet = recentText.replace(/\n/g, ' ').slice(-30).trim();
+        broadcastLog(taskId, `⏳ ${progressPrefix} (已生成 ${charCount} 字) ...${snippet}`, 'info');
+        lastLogTime = Date.now();
+        recentText = ''; // reset recent text after logging
+      }
+    }
+    return fullContent;
+  }, retries, delay, broadcastLog, taskId);
+};
+
 export const getProxyAgent = (proxyUrl: string) => {
   if (!proxyUrl) return undefined;
   if (proxyUrl.startsWith('socks')) {
