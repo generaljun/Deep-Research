@@ -34,1037 +34,21 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================================
-// 1. Logging Setup (with rotation)
-// ==========================================
-const logDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-
-const getLogFile = () => path.join(logDir, `app-${new Date().toISOString().split('T')[0]}.log`);
-
-const logger = {
-  info: (msg: string) => appendLog('INFO', msg),
-  warn: (msg: string) => appendLog('WARN', msg),
-  error: (msg: string) => appendLog('ERROR', msg),
-};
-
-function appendLog(level: string, msg: string) {
-  const timestamp = new Date().toISOString();
-  const line = `[${timestamp}] [${level}] ${msg}\n`;
-  console.log(line.trim());
-  fs.appendFileSync(getLogFile(), line);
-}
-
-function appendTaskLog(taskId: string, level: string, msg: string) {
-  const timestamp = new Date().toISOString();
-  const line = `[${timestamp}] [${level}] ${msg}\n`;
-  const taskLogFile = path.join(logDir, `task-${taskId}.log`);
-  fs.appendFileSync(taskLogFile, line);
-  
-  // Keep only 10 most recent task logs
-  try {
-    const files = fs.readdirSync(logDir).filter(f => f.startsWith('task-') && f.endsWith('.log'));
-    if (files.length > 10) {
-      const sortedFiles = files.map(f => ({
-        name: f,
-        time: fs.statSync(path.join(logDir, f)).mtime.getTime()
-      })).sort((a, b) => b.time - a.time);
-      
-      const filesToDelete = sortedFiles.slice(10);
-      filesToDelete.forEach(f => {
-        fs.unlinkSync(path.join(logDir, f.name));
-      });
-    }
-  } catch (e) {
-    console.error('Task log rotation failed:', e);
-  }
-}
-
-// Clean logs older than 7 days
-setInterval(() => {
-  try {
-    const files = fs.readdirSync(logDir);
-    const now = Date.now();
-    files.forEach(file => {
-      const filePath = path.join(logDir, file);
-      const stats = fs.statSync(filePath);
-      if (now - stats.mtimeMs > 7 * 24 * 60 * 60 * 1000) {
-        fs.unlinkSync(filePath);
-        logger.info(`Deleted old log file: ${file}`);
-      }
-    });
-  } catch (e) {
-    console.error('Log rotation failed:', e);
-  }
-}, 24 * 60 * 60 * 1000);
-
-// ==========================================
-// 2. Database Setup (SQLite)
-// ==========================================
-let db: Database.Database;
-try {
-  const dataDir = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data');
-  if (!fs.existsSync(dataDir)) {
-    console.log(`Creating data directory: ${dataDir}`);
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  const dbPath = process.env.DB_PATH || path.join(dataDir, 'database.sqlite');
-  console.log(`Initializing database at: ${dbPath}`);
-  db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    );
-    CREATE TABLE IF NOT EXISTS tasks (
-      id TEXT PRIMARY KEY,
-      topic TEXT,
-      status TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      username TEXT UNIQUE,
-      password_hash TEXT,
-      salt TEXT,
-      role TEXT,
-      must_change_password INTEGER DEFAULT 0,
-      quota INTEGER DEFAULT 3,
-      daily_limit INTEGER DEFAULT 3,
-      total_quota INTEGER DEFAULT 10,
-      used_quota INTEGER DEFAULT 0,
-      daily_used INTEGER DEFAULT 0,
-      last_reset_date TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS login_attempts (
-      ip TEXT PRIMARY KEY,
-      attempts INTEGER DEFAULT 0,
-      tier INTEGER DEFAULT 0,
-      lock_until DATETIME
-    );
-    CREATE TABLE IF NOT EXISTS reports (
-      id TEXT PRIMARY KEY,
-      title TEXT,
-      topic TEXT,
-      user TEXT,
-      feishu_url TEXT,
-      html_path TEXT,
-      md_path TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-  
-  // Migration: add new columns if they don't exist
-  try {
-    const columns = db.prepare("PRAGMA table_info(users)").all() as any[];
-    const colNames = columns.map(c => c.name);
-    if (!colNames.includes('quota')) {
-      db.exec("ALTER TABLE users ADD COLUMN quota INTEGER DEFAULT 3");
-      console.log("Migration: Added quota column to users table");
-    }
-    if (!colNames.includes('daily_limit')) {
-      db.exec("ALTER TABLE users ADD COLUMN daily_limit INTEGER DEFAULT 3");
-      console.log("Migration: Added daily_limit column to users table");
-    }
-    if (!colNames.includes('total_quota')) {
-      db.exec("ALTER TABLE users ADD COLUMN total_quota INTEGER DEFAULT 10");
-      console.log("Migration: Added total_quota column to users table");
-    }
-    if (!colNames.includes('used_quota')) {
-      db.exec("ALTER TABLE users ADD COLUMN used_quota INTEGER DEFAULT 0");
-      console.log("Migration: Added used_quota column to users table");
-    }
-    if (!colNames.includes('daily_used')) {
-      db.exec("ALTER TABLE users ADD COLUMN daily_used INTEGER DEFAULT 0");
-      console.log("Migration: Added daily_used column to users table");
-    }
-    if (!colNames.includes('last_reset_date')) {
-      db.exec("ALTER TABLE users ADD COLUMN last_reset_date TEXT");
-      console.log("Migration: Added last_reset_date column to users table");
-    }
-  } catch (e) {
-    console.error("Migration error:", e);
-  }
-
-  console.log('Database initialized successfully');
-} catch (err) {
-  console.error('CRITICAL: Database initialization failed!');
-  console.error(err);
-  process.exit(1);
-}
-
-// 僵尸任务自愈机制：启动时将所有 running 状态的任务重置为 failed
-const zombieTasks = db.prepare("UPDATE tasks SET status = 'failed' WHERE status = 'running'").run();
-if (zombieTasks.changes > 0) {
-  logger.warn(`[系统自愈] 发现并清理了 ${zombieTasks.changes} 个因系统意外重启导致的僵尸任务。`);
-}
-
-const getSetting = (key: string, defaultValue = '') => {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as any;
-  return (row && row.value) ? row.value : defaultValue;
-};
-
-const setSetting = (key: string, value: string) => {
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
-};
-
-// ==========================================
-// 3. Auth & Security Helpers
-// ==========================================
-let jwtSecret = getSetting('jwt_secret');
-if (!jwtSecret) {
-  jwtSecret = crypto.randomBytes(32).toString('hex');
-  setSetting('jwt_secret', jwtSecret);
-  logger.info('Generated new JWT secret');
-} else {
-  logger.info('Loaded existing JWT secret');
-}
-
-const hashPassword = (password: string, salt: string) => {
-  return crypto.scryptSync(password, salt, 64).toString('hex');
-};
-
-// Initialize default admin if no users exist
-const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
-if (userCount.count === 0) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = hashPassword('admin', salt);
-  db.prepare('INSERT INTO users (id, username, password_hash, salt, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(crypto.randomUUID(), 'admin', hash, salt, 'admin', 1);
-  logger.info('Default admin user created.');
-}
-
-const checkRateLimit = (ip: string) => {
-  const record = db.prepare('SELECT * FROM login_attempts WHERE ip = ?').get(ip) as any;
-  if (record && record.lock_until) {
-    if (new Date(record.lock_until) > new Date()) {
-      const minutesLeft = Math.ceil((new Date(record.lock_until).getTime() - Date.now()) / 60000);
-      throw new Error(`IP 已被锁定，请在 ${minutesLeft} 分钟后重试。`);
-    }
-  }
-};
-
-const recordFailedLogin = (ip: string) => {
-  db.prepare('INSERT OR IGNORE INTO login_attempts (ip, attempts, tier) VALUES (?, 0, 0)').run(ip);
-  db.prepare('UPDATE login_attempts SET attempts = attempts + 1 WHERE ip = ?').run(ip);
-  const record = db.prepare('SELECT * FROM login_attempts WHERE ip = ?').get(ip) as any;
-  
-  let lockUntil = null;
-  if (record.attempts >= 9) {
-    lockUntil = new Date(Date.now() + 24 * 60 * 60 * 1000); // 1 day
-    db.prepare('UPDATE login_attempts SET tier = 3, lock_until = ? WHERE ip = ?').run(lockUntil.toISOString(), ip);
-    logger.warn(`IP ${ip} locked for 24 hours due to 9 failed attempts.`);
-  } else if (record.attempts >= 6) {
-    lockUntil = new Date(Date.now() + 6 * 60 * 60 * 1000); // 6 hours
-    db.prepare('UPDATE login_attempts SET tier = 2, lock_until = ? WHERE ip = ?').run(lockUntil.toISOString(), ip);
-    logger.warn(`IP ${ip} locked for 6 hours due to 6 failed attempts.`);
-  } else if (record.attempts >= 3) {
-    lockUntil = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
-    db.prepare('UPDATE login_attempts SET tier = 1, lock_until = ? WHERE ip = ?').run(lockUntil.toISOString(), ip);
-    logger.warn(`IP ${ip} locked for 10 minutes due to 3 failed attempts.`);
-  }
-};
-
-const resetLoginAttempts = (ip: string) => {
-  db.prepare('DELETE FROM login_attempts WHERE ip = ?').run(ip);
-};
-
-// Middleware
-const authenticateToken = (req: any, res: any, next: any) => {
-  const authHeader = req.headers['authorization'];
-  let token = authHeader && authHeader.split(' ')[1];
-  
-  // Also check query parameter (useful for direct file downloads via <a> tags)
-  if (!token && req.query.token) {
-    token = req.query.token as string;
-  }
-
-  if (!token) return res.status(401).json({ error: 'Unauthorized' });
-
-  jwt.verify(token, jwtSecret, (err: any, user: any) => {
-    if (err) return res.status(403).json({ error: 'Forbidden' });
-    req.user = user;
-    next();
-  });
-};
-
-const requireAdmin = (req: any, res: any, next: any) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-  next();
-};
-
-// ==========================================
-// 4. SSE & Helper Functions
-// ==========================================
-const taskEvents = new EventEmitter();
-
-let currentRunningTask: { taskId: string, username: string, topic: string } | null = null;
-
-const broadcastSystemStatus = () => {
-  const status = JSON.stringify({
-    type: 'system_status',
-    data: { isBusy: currentRunningTask !== null, currentTask: currentRunningTask }
-  });
-  taskEvents.emit('system_status', status);
-};
-
-const broadcastLog = (taskId: string, message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
-  const logEntry = JSON.stringify({ timestamp: new Date().toISOString(), message, type });
-  taskEvents.emit(`log-${taskId}`, logEntry);
-  logger.info(`[Task ${taskId}] ${message}`);
-  appendTaskLog(taskId, type.toUpperCase(), message);
-};
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> => {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (error: any) {
-      if (i === retries - 1) throw error;
-      logger.warn(`[Retry ${i + 1}/${retries}] Error: ${error.message}. Retrying in ${delay}ms...`);
-      await sleep(delay);
-      delay *= 2;
-    }
-  }
-  throw new Error('Unreachable');
-};
-
-const getProxyAgent = (proxyUrl: string) => {
-  if (!proxyUrl) return undefined;
-  if (proxyUrl.startsWith('socks')) {
-    return new SocksProxyAgent(proxyUrl);
-  }
-  return new HttpsProxyAgent(proxyUrl);
-};
-
-const getLLMClient = () => {
-  const apiKey = getSetting('aliyun_api_key');
-  const baseURL = getSetting('llm_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1');
-  const proxyUrl = getSetting('http_proxy');
-  
-  if (!apiKey) throw new Error('未配置大模型 API Key，请前往后台设置。');
-  
-  const options: any = { 
-    apiKey, 
-    baseURL,
-    timeout: 300000, // 增加到 300 秒 (5 分钟)，防止撰写长章节时超时
-    maxRetries: 2
-  };
-
-  if (proxyUrl) {
-    const agent = getProxyAgent(proxyUrl);
-    options.httpAgent = agent;
-    options.httpsAgent = agent;
-  }
-  
-  return new OpenAI(options);
-};
-
-const searchBocha = async (query: string) => {
-  const apiKey = getSetting('bocha_api_key');
-  const proxyUrl = getSetting('http_proxy');
-  
-  if (!apiKey) throw new Error('未配置博查 API Key，请前往后台设置。');
-  
-  const axiosConfig: any = {
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    family: 4 // 强制使用 IPv4，解决部分 NAS 环境 IPv6 路由问题
-  };
-
-  if (proxyUrl) {
-    const agent = getProxyAgent(proxyUrl);
-    axiosConfig.httpsAgent = agent;
-    axiosConfig.httpAgent = agent;
-    axiosConfig.proxy = false;
-  }
-
-  const response = await axios.post(
-    'https://api.bochaai.com/v1/web-search',
-    { query, freshness: "noLimit", summary: true, count: 10 },
-    axiosConfig
-  );
-  
-  const results = response.data?.data?.webPages?.value || [];
-  return results.slice(0, 8).map((r: any) => `- [${r.name}](${r.url}): ${r.snippet}`).join('\n');
-};
-
-const sendNotifications = async (message: string) => {
-  const tgToken = getSetting('tg_bot_token');
-  const tgChatId = getSetting('tg_chat_id');
-  const feishuAppId = getSetting('feishu_app_id');
-  const feishuAppSecret = getSetting('feishu_app_secret');
-  const proxyUrl = getSetting('http_proxy');
-
-  if (tgToken && tgChatId) {
-    const axiosConfig: any = { family: 4 };
-    if (proxyUrl) {
-      const agent = getProxyAgent(proxyUrl);
-      axiosConfig.httpsAgent = agent;
-      axiosConfig.httpAgent = agent;
-    }
-    try {
-      await axios.post(`https://api.telegram.org/bot${tgToken}/sendMessage`, 
-        { chat_id: tgChatId, text: message },
-        axiosConfig
-      );
-    } catch (e: any) { logger.error(`TG Notification failed: ${e.message}`); }
-  }
-
-  // 飞书消息通知 (如果有配置 App ID/Secret，可以通过机器人发送)
-  if (feishuAppId && feishuAppSecret) {
-    try {
-      const token = await getFeishuToken();
-      // 这里可以实现发送飞书消息，但用户主要需求是创建文档，通知可以复用 TG 或简单实现
-      logger.info('Feishu App configured, notifications can be sent via Feishu Doc links.');
-    } catch (e: any) { logger.error(`Feishu Notification failed: ${e.message}`); }
-  }
-};
-
-const getFeishuToken = async () => {
-  const appId = getSetting('feishu_app_id');
-  const appSecret = getSetting('feishu_app_secret');
-  if (!appId || !appSecret) return null;
-
-  const res = await axios.post('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-    app_id: appId,
-    app_secret: appSecret
-  });
-  return res.data.tenant_access_token;
-};
-
-const createFeishuDoc = async (title: string) => {
-  const token = await getFeishuToken();
-  if (!token) return null;
-
-  const res = await axios.post('https://open.feishu.cn/open-apis/docx/v1/documents', {
-    title: title
-  }, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-
-  if (res.data.code === 0) {
-    return res.data.data.document;
-  }
-  throw new Error(`创建飞书文档失败: ${res.data.msg}`);
-};
-
-const appendToFeishuDoc = async (documentId: string, markdown: string) => {
-  const token = await getFeishuToken();
-  if (!token) return;
-
-  const lines = markdown.split('\n').map(l => l.trim()).filter(l => l !== '');
-  if (lines.length === 0) return;
-
-  const children: any[] = [];
-  for (const line of lines) {
-    try {
-      if (line.startsWith('# ')) {
-        children.push({ block_type: 3, heading1: { elements: [{ text_run: { content: line.replace('# ', '') } }] } });
-      } else if (line.startsWith('## ')) {
-        children.push({ block_type: 4, heading2: { elements: [{ text_run: { content: line.replace('## ', '') } }] } });
-      } else if (line.startsWith('### ')) {
-        children.push({ block_type: 5, heading3: { elements: [{ text_run: { content: line.replace('### ', '') } }] } });
-      } else {
-        // 限制单行长度，防止飞书 API 报错
-        const safeText = line.substring(0, 2000);
-        children.push({ block_type: 2, text: { elements: [{ text_run: { content: safeText } }] } });
-      }
-    } catch (e) {
-      logger.error(`Error parsing line for Feishu: ${line}`);
-    }
-  }
-
-  if (children.length === 0) return;
-
-  try {
-    // 飞书 API 限制单次追加 block 数量（通常为 50-100）
-    // 我们需要分批发送
-    const batchSize = 50;
-    for (let i = 0; i < children.length; i += batchSize) {
-      const batch = children.slice(i, i + batchSize);
-      await axios.post(`https://open.feishu.cn/open-apis/docx/v1/documents/${documentId}/blocks/${documentId}/children`, {
-        children: batch,
-        index: -1
-      }, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-    }
-  } catch (e: any) {
-    const errorMsg = e.response?.data?.msg || e.message;
-    logger.error(`Feishu append failed: ${errorMsg}`);
-    throw new Error(`飞书文档追加失败: ${errorMsg}`);
-  }
-};
-
-import MarkdownIt from 'markdown-it';
-import anchor from 'markdown-it-anchor';
-import toc from 'markdown-it-table-of-contents';
-
-const md = new MarkdownIt({
-  html: true,
-  linkify: true,
-  typographer: true,
-});
-md.use(anchor, { permalink: anchor.permalink.headerLink() });
-md.use(toc);
-
-const generateHtmlReport = (title: string, markdown: string, feishuUrl?: string, createdAt?: string) => {
-  // Remove the first h1 heading from the markdown to avoid duplication with the HTML header
-  let cleanMarkdown = markdown.replace(/^#\s+.*?\n/, '');
-  
-  // Fix malformed headings like "### ### Heading" or "#### ### Heading"
-  cleanMarkdown = cleanMarkdown.replace(/^ {0,3}(#{1,6})\s+#{1,6}\s+/gm, '$1 ');
-  
-  // Fix missing spaces after heading markers like "###Heading"
-  cleanMarkdown = cleanMarkdown.replace(/^ {0,3}(#{1,6})([^#\s])/gm, '$1 $2');
-  
-  // Fix headings wrapped in bold tags like "**### Heading**"
-  cleanMarkdown = cleanMarkdown.replace(/^ {0,3}\*\*(#{1,6})\s+(.*?)\*\*/gm, '$1 **$2**');
-  
-  const content = md.render(cleanMarkdown);
-  // Calculate word count (simplified: count characters excluding whitespace)
-  const wordCount = cleanMarkdown.replace(/\s+/g, '').length;
-  const readingTime = Math.ceil(wordCount / 500); // Assume 500 chars per minute
-  const displayTime = createdAt 
-    ? new Date(createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) 
-    : new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-
-  return `
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${title}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
-        :root { 
-            --bg-color: #f8fafc; 
-            --text-color: #1e293b; 
-            --card-bg: #ffffff; 
-            --border-color: rgba(0,0,0,0.1);
-            --table-header-bg: rgba(0,0,0,0.05);
-            --link-color: #3b82f6;
-            --toc-active-bg: rgba(59, 130, 246, 0.1);
-        }
-        .dark-theme { 
-            --bg-color: #0f172a; 
-            --text-color: #f1f5f9; 
-            --card-bg: #1e293b; 
-            --border-color: rgba(255,255,255,0.1);
-            --table-header-bg: rgba(255,255,255,0.05);
-            --link-color: #60a5fa;
-            --toc-active-bg: rgba(96, 165, 250, 0.15);
-        }
-        .sepia-theme { 
-            --bg-color: #fdf6e3; 
-            --text-color: #586e75; 
-            --card-bg: #eee8d5; 
-            --border-color: rgba(88,110,117,0.2);
-            --table-header-bg: rgba(88,110,117,0.1);
-            --link-color: #268bd2;
-            --toc-active-bg: rgba(38, 139, 210, 0.15);
-        }
-        
-        body { font-family: 'Inter', 'Noto Sans SC', sans-serif; background-color: var(--bg-color); color: var(--text-color); transition: all 0.3s ease; overflow-x: hidden; overscroll-behavior-x: none; }
-        html { overflow-x: hidden; }
-        .prose { max-width: 65ch; margin: 0 auto; font-size: 1.25rem; }
-        .prose h1 { font-size: 2.75rem; font-weight: 800; margin-top: 2rem; margin-bottom: 1rem; color: inherit; }
-        .prose h2 { font-size: 2rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.75rem; color: inherit; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
-        .prose h3 { font-size: 1.5rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: inherit; }
-        .prose p { margin-top: 1rem; margin-bottom: 1rem; line-height: 1.75; color: inherit; opacity: 0.9; text-indent: 2em; }
-        .prose table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; margin-bottom: 1.5rem; font-size: 1.125rem; background: var(--card-bg); color: var(--text-color); }
-        .table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1.5rem 0; border-radius: 0.5rem; border: 1px solid var(--border-color); overscroll-behavior-x: contain; }
-        .prose table { margin: 0; border: none; }
-        .chart-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 2rem 0; padding: 1rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid var(--border-color); overscroll-behavior-x: contain; }
-        .chart-container { min-width: 600px; height: 400px; position: relative; }
-        .prose th { background-color: var(--table-header-bg); border: 1px solid var(--border-color); padding: 0.75rem; text-align: left; font-weight: 600; color: var(--text-color); }
-        .prose td { border: 1px solid var(--border-color); padding: 0.75rem; color: var(--text-color); }
-        
-        #toc { position: fixed; left: 2rem; top: 6rem; width: 280px; max-height: calc(100vh - 8rem); overflow-y: auto; padding: 1.5rem; background: var(--card-bg); border-radius: 1rem; border: 1px solid var(--border-color); display: none; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); scrollbar-width: thin; z-index: 40; }
-        @media (min-width: 1280px) { #toc { display: block; } }
-        #toc ul { list-style: none; padding-left: 0; margin: 0; }
-        #toc li { margin-bottom: 0.1rem; font-size: 0.875rem; line-height: 1.4; }
-        .toc-item-container { display: flex; align-items: flex-start; border-radius: 0.375rem; transition: background 0.2s; margin-bottom: 2px; }
-        .toc-item-container:hover { background: var(--table-header-bg); }
-        .toc-toggle { width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0.4; transition: all 0.2s; flex-shrink: 0; margin-top: 0.1rem; border-radius: 0.25rem; }
-        .toc-toggle:hover { opacity: 1; background: var(--border-color); }
-        .toc-toggle.collapsed { transform: rotate(-90deg); }
-        .toc-toggle svg { width: 14px; height: 14px; }
-        #toc a { display: block; flex-grow: 1; padding: 0.3rem 0.5rem; color: var(--text-color); opacity: 0.75; text-decoration: none; transition: all 0.2s; border-left: 2px solid transparent; }
-        #toc a:hover { opacity: 1; color: var(--link-color); }
-        #toc a.active { opacity: 1; color: var(--link-color); font-weight: 600; background: var(--toc-active-bg); border-left-color: var(--link-color); }
-        #toc .toc-h2 { font-weight: 600; }
-        #toc .toc-h3 { font-size: 0.8rem; opacity: 0.7; }
-        .toc-sublist { display: block; margin-left: 0.75rem; padding-left: 1rem; border-left: 1px solid var(--border-color); margin-bottom: 0.5rem; }
-        .toc-sublist.collapsed { display: none; }
-
-        .controls { position: fixed; right: 2rem; bottom: 2rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 100; }
-        .control-btn { position: relative; width: 3rem; height: 3rem; border-radius: 50%; background: var(--card-bg); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); transition: all 0.2s; color: var(--text-color); }
-        .control-btn:hover { transform: scale(1.1); background: var(--table-header-bg); }
-        .control-btn::before { content: attr(data-tooltip); position: absolute; right: 100%; top: 50%; transform: translateY(-50%); margin-right: 10px; background: var(--text-color); color: var(--bg-color); padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; font-weight: 500; }
-        .control-btn:hover::before { opacity: 1; }
-        
-        #toast { visibility: hidden; min-width: 250px; margin-left: -125px; background-color: #333; color: #fff; text-align: center; border-radius: 8px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; font-size: 14px; }
-        #toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
-        @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
-        @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
-    </style>
-</head>
-<body class="bg-slate-50 text-slate-900 antialiased">
-    <nav class="sticky top-0 z-50 bg-white/90 border-b border-slate-200 py-4 px-6 mb-8">
-        <div class="max-w-5xl mx-auto flex justify-between items-center">
-            <div class="flex items-center space-x-2">
-                <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">DR</div>
-                <span class="font-bold text-lg tracking-tight">Deep Research Report</span>
-            </div>
-            <div class="flex items-center space-x-4">
-                ${feishuUrl ? `<a href="${feishuUrl}" target="_blank" class="text-sm font-medium text-emerald-600 hover:text-emerald-700 transition-colors">飞书文档</a>` : ''}
-                <button onclick="shareReport()" class="flex items-center space-x-1 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-100 transition-all">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
-                    <span>分享</span>
-                </button>
-                <button onclick="window.print()" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">打印</button>
-            </div>
-        </div>
-    </nav>
-
-    <div id="toc">
-        <h3 class="text-xs font-bold uppercase tracking-wider mb-4 opacity-40">目录</h3>
-        <ul id="toc-list"></ul>
-    </div>
-
-    <main class="max-w-4xl mx-auto px-4 pb-24">
-        <header class="mb-12 text-center">
-            <h1 class="text-4xl md:text-5xl font-extrabold mb-4">${title}</h1>
-            <div class="flex flex-wrap justify-center items-center gap-4 opacity-60 text-sm">
-                <span>生成时间: ${displayTime}</span>
-                <span>•</span>
-                <span>全文共计: ${wordCount} 字</span>
-                <span>•</span>
-                <span>预计阅读: ${readingTime} 分钟</span>
-            </div>
-        </header>
-
-        <div id="report-content" class="prose prose-slate lg:prose-xl">
-            ${content}
-        </div>
-
-        <div class="mt-16 pt-8 border-t border-[var(--border-color)] flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a href="/?tab=reports" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-900/20 flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                返回报告库
-            </a>
-            <a href="/?tab=generator" class="px-6 py-3 bg-[var(--card-bg)] hover:bg-[var(--table-header-bg)] text-[var(--text-color)] border border-[var(--border-color)] rounded-xl font-bold transition-all flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                生成新报告
-            </a>
-            <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="px-6 py-3 bg-[var(--card-bg)] hover:bg-[var(--table-header-bg)] text-[var(--text-color)] border border-[var(--border-color)] rounded-xl font-bold transition-all flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
-                回到顶部
-            </button>
-        </div>
-    </main>
-
-    <div class="controls">
-        <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="control-btn" data-tooltip="回到顶部">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
-        </button>
-        <button onclick="toggleTheme()" class="control-btn" data-tooltip="切换阅读模式">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-        </button>
-        <button onclick="changeFontSize(1)" class="control-btn" data-tooltip="放大字体">
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M9 12h6"/><path d="M12 9v6"/></svg>
-        </button>
-        <button onclick="changeFontSize(-1)" class="control-btn" data-tooltip="缩小字体">
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M9 12h6"/></svg>
-        </button>
-    </div>
-
-    <div id="toast">链接已成功复制到剪贴板</div>
-
-    <footer class="bg-white/50 border-t border-slate-200 py-12">
-        <div class="max-w-4xl mx-auto px-4 text-center opacity-50 text-sm">
-            <p>© ${new Date().getFullYear()} Deep Research Web. All rights reserved.</p>
-            <p class="mt-2">本报告内容由 AI 生成，仅供参考，不代表任何投资建议。</p>
-        </div>
-    </footer>
-
-    <script>
-        // TOC Generation and Scroll Spy
-        const content = document.getElementById('report-content');
-        const tocList = document.getElementById('toc-list');
-        const headings = content.querySelectorAll('h2, h3');
-        const tocLinks = [];
-        
-        let h2Counter = 0;
-        let h3Counter = 0;
-        let currentSublist = null;
-        
-        headings.forEach((heading, index) => {
-            const id = 'heading-' + index;
-            heading.id = id;
-            
-            let prefix = '';
-            const li = document.createElement('li');
-            const container = document.createElement('div');
-            container.className = 'toc-item-container';
-            
-            const a = document.createElement('a');
-            a.href = '#' + id;
-            
-            if (heading.tagName === 'H2') {
-                h2Counter++;
-                h3Counter = 0;
-                prefix = h2Counter + '. ';
-                a.textContent = prefix + heading.textContent;
-                a.className = 'toc-h2';
-                
-                const toggle = document.createElement('span');
-                toggle.className = 'toc-toggle';
-                toggle.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
-                
-                container.appendChild(toggle);
-                container.appendChild(a);
-                li.appendChild(container);
-                
-                currentSublist = document.createElement('ul');
-                currentSublist.className = 'toc-sublist';
-                li.appendChild(currentSublist);
-                
-                const thisSublist = currentSublist;
-                const toggleSublist = (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    toggle.classList.toggle('collapsed');
-                    thisSublist.classList.toggle('collapsed');
-                };
-                
-                toggle.onclick = toggleSublist;
-                
-                // Allow clicking the container (except the link text) to toggle
-                container.onclick = (e) => {
-                    if (e.target !== a) {
-                        toggleSublist(e);
-                    }
-                };
-                
-                tocList.appendChild(li);
-            } else if (heading.tagName === 'H3') {
-                h3Counter++;
-                prefix = h2Counter + '.' + h3Counter + ' ';
-                a.textContent = prefix + heading.textContent;
-                a.className = 'toc-h3';
-                
-                container.appendChild(a);
-                li.appendChild(container);
-                
-                if (currentSublist) {
-                    currentSublist.appendChild(li);
-                } else {
-                    tocList.appendChild(li);
-                }
-            }
-            
-            tocLinks.push({ id, element: a });
-        });
-        
-        // Hide toggle if no children
-        tocList.querySelectorAll('.toc-toggle').forEach(toggle => {
-            const sublist = toggle.closest('li').querySelector('.toc-sublist');
-            if (!sublist || sublist.children.length === 0) {
-                toggle.style.visibility = 'hidden';
-                if (sublist) sublist.style.display = 'none';
-            }
-        });
-
-        // Intersection Observer for Scroll Spy
-        const observerOptions = {
-            root: null,
-            rootMargin: '-100px 0px -60% 0px',
-            threshold: 0
-        };
-
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    tocLinks.forEach(link => link.element.classList.remove('active'));
-                    const activeLink = tocLinks.find(link => link.id === entry.target.id);
-                    if (activeLink) {
-                        activeLink.element.classList.add('active');
-                        
-                        // Expand parent if it's collapsed
-                        const parentSublist = activeLink.element.closest('.toc-sublist');
-                        if (parentSublist && parentSublist.classList.contains('collapsed')) {
-                            parentSublist.classList.remove('collapsed');
-                            const parentToggle = parentSublist.parentElement.querySelector('.toc-toggle');
-                            if (parentToggle) {
-                                parentToggle.classList.remove('collapsed');
-                            }
-                        }
-                        
-                        const tocContainer = document.getElementById('toc');
-                        const linkRect = activeLink.element.getBoundingClientRect();
-                        const tocRect = tocContainer.getBoundingClientRect();
-                        if (linkRect.bottom > tocRect.bottom || linkRect.top < tocRect.top) {
-                            activeLink.element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        }
-                    }
-                }
-            });
-        }, observerOptions);
-
-        headings.forEach(heading => observer.observe(heading));
-
-        // Theme Toggle
-        let currentTheme = 0; // 0: light, 1: dark, 2: sepia
-        function toggleTheme() {
-            currentTheme = (currentTheme + 1) % 3;
-            document.body.classList.remove('dark-theme', 'sepia-theme');
-            if (currentTheme === 1) document.body.classList.add('dark-theme');
-            if (currentTheme === 2) document.body.classList.add('sepia-theme');
-        }
-
-        // Font Size
-        let baseSize = 18;
-        function changeFontSize(delta) {
-            baseSize = Math.max(12, Math.min(32, baseSize + delta * 2));
-            content.style.fontSize = baseSize + 'px';
-        }
-
-        function shareReport() {
-            const url = window.location.href;
-            const toast = document.getElementById("toast");
-            navigator.clipboard.writeText(url).then(() => {
-                toast.className = "show";
-                setTimeout(() => { toast.className = ""; }, 3000);
-            });
-        }
-        
-        hljs.highlightAll();
-    </script>
-
-    <script>
-        // 自动识别表格并生成图表
-        document.querySelectorAll('table').forEach((table, index) => {
-            // Wrap table for horizontal scroll
-            const wrapper = document.createElement('div');
-            wrapper.className = 'table-wrapper';
-            table.parentNode.insertBefore(wrapper, table);
-            wrapper.appendChild(table);
-
-            const rows = Array.from(table.querySelectorAll('tr'));
-            if (rows.length < 2) return;
-
-            // 获取表头
-            let headerCells = Array.from(rows[0].querySelectorAll('th, td'));
-            if (headerCells.length === 0) return;
-            const headers = headerCells.map(el => el.innerText.trim());
-            
-            // 获取数据行
-            const dataRows = rows.slice(1).filter(row => row.querySelectorAll('td').length === headers.length);
-            if (dataRows.length === 0) return;
-
-            // 确定标签列 (通常是第一列)
-            const labelColIdx = 0;
-            const labels = dataRows.map(row => {
-                const cell = row.querySelectorAll('td')[labelColIdx];
-                return cell ? cell.innerText.trim() : '';
-            });
-
-            // 检查标签是否像年份/时间序列
-            const isTimeSeries = labels.length > 0 && labels.every(label => {
-                const l = label.trim();
-                return /^(20\d{2}|19\d{2})/.test(l) || 
-                       /^([1-9]|1[0-2])月/.test(l) || 
-                       /^第[一二三四1-4]季度/.test(l) ||
-                       /^Q[1-4]/i.test(l) ||
-                       /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(l) ||
-                       /^\d{4}-\d{2}/.test(l) ||
-                       /^\d{4}年\d{1,2}月/.test(l) ||
-                       /^\d{4}\.\d{1,2}/.test(l);
-            });
-
-            // 寻找数值列 (排除标签列)
-            const numericCols = [];
-            for (let j = 0; j < headers.length; j++) {
-                if (j === labelColIdx) continue; // 不把标签列作为数据列
-                
-                let validNumberCount = 0;
-                for (let i = 0; i < dataRows.length; i++) {
-                    const cell = dataRows[i].querySelectorAll('td')[j];
-                    if (!cell) continue;
-                    const text = cell.innerText.trim();
-                    if (text === '' || text === '-') continue; // 允许空值或占位符
-                    
-                    // 提取数字，允许千分位逗号和百分号
-                    const cleanText = text.replace(/,/g, '').replace(/%/g, '');
-                    const val = parseFloat(cleanText);
-                    if (!isNaN(val)) {
-                        validNumberCount++;
-                    }
-                }
-                // 如果该列超过一半是有效数字，则认为是数值列
-                if (validNumberCount > 0 && validNumberCount >= dataRows.length / 2) {
-                    numericCols.push(j);
-                }
-            }
-
-            if (numericCols.length > 0) {
-                const chartWrapper = document.createElement('div');
-                chartWrapper.className = 'chart-wrapper';
-                
-                const container = document.createElement('div');
-                container.className = 'chart-container';
-                
-                const canvas = document.createElement('canvas');
-                canvas.id = 'chart-' + index;
-                container.appendChild(canvas);
-                chartWrapper.appendChild(container);
-                wrapper.parentNode.insertBefore(chartWrapper, wrapper.nextSibling);
-
-                // 决定图表类型
-                let chartType = 'bar';
-                let indexAxis = 'x';
-                if (isTimeSeries) {
-                    chartType = 'line';
-                } else if (numericCols.length === 1 && labels.length <= 8 && labels.length >= 2) {
-                    chartType = 'doughnut';
-                } else if (labels.length > 8 && !isTimeSeries) {
-                    chartType = 'bar';
-                    indexAxis = 'y';
-                }
-
-                // 预设一些好看的颜色组合 (Tailwind 风格)
-                const colors = [
-                    { bg: 'rgba(59, 130, 246, 0.2)', border: 'rgb(59, 130, 246)' }, // Blue
-                    { bg: 'rgba(16, 185, 129, 0.2)', border: 'rgb(16, 185, 129)' }, // Emerald
-                    { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgb(245, 158, 11)' }, // Amber
-                    { bg: 'rgba(139, 92, 246, 0.2)', border: 'rgb(139, 92, 246)' }, // Violet
-                    { bg: 'rgba(236, 72, 153, 0.2)', border: 'rgb(236, 72, 153)' }, // Pink
-                    { bg: 'rgba(14, 165, 233, 0.2)', border: 'rgb(14, 165, 233)' }, // Sky
-                    { bg: 'rgba(249, 115, 22, 0.2)', border: 'rgb(249, 115, 22)' }, // Orange
-                    { bg: 'rgba(168, 85, 247, 0.2)', border: 'rgb(168, 85, 247)' }, // Purple
-                    { bg: 'rgba(20, 184, 166, 0.2)', border: 'rgb(20, 184, 166)' }, // Teal
-                    { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgb(239, 68, 68)' },   // Red
-                ];
-
-                const isDoughnut = chartType === 'doughnut' || chartType === 'pie';
-
-                const datasets = numericCols.map((colIdx, i) => {
-                    let bgColors, borderColors;
-                    if (isDoughnut) {
-                        bgColors = labels.map((_, idx) => colors[idx % colors.length].bg.replace('0.2', '0.7'));
-                        borderColors = labels.map((_, idx) => colors[idx % colors.length].border);
-                    } else {
-                        bgColors = colors[i % colors.length].bg;
-                        borderColors = colors[i % colors.length].border;
-                    }
-                    
-                    return {
-                        label: headers[colIdx],
-                        data: dataRows.map(row => {
-                            const cell = row.querySelectorAll('td')[colIdx];
-                            if (!cell) return null;
-                            const text = cell.innerText.trim();
-                            if (text === '' || text === '-') return null;
-                            const cleanText = text.replace(/,/g, '').replace(/%/g, '');
-                            const val = parseFloat(cleanText);
-                            return isNaN(val) ? null : val;
-                        }),
-                        backgroundColor: bgColors,
-                        borderColor: borderColors,
-                        borderWidth: 2,
-                        tension: 0.3, // 平滑曲线
-                        fill: chartType === 'line' && numericCols.length === 1 // 只有单条线时才填充面积
-                    };
-                });
-                
-                // 尝试获取表格上方的标题
-                let chartTitle = '数据可视化: ' + headers[0] + '相关数据';
-                let currentEl = table.previousElementSibling;
-                while (currentEl) {
-                    if (currentEl.tagName.match(/^H[1-6]$/)) {
-                        chartTitle = currentEl.innerText;
-                        break;
-                    }
-                    if (currentEl.tagName === 'TABLE') break; // 跨过另一个表格则停止
-                    currentEl = currentEl.previousElementSibling;
-                }
-
-                new Chart(canvas, {
-                    type: chartType,
-                    data: { labels, datasets },
-                    options: {
-                        indexAxis: indexAxis,
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        interaction: {
-                            mode: 'index',
-                            intersect: false,
-                        },
-                        plugins: {
-                            legend: { 
-                                position: isDoughnut ? 'right' : 'top',
-                                labels: { font: { family: "'Inter', 'Noto Sans SC', sans-serif" } }
-                            },
-                            title: { 
-                                display: true, 
-                                text: chartTitle,
-                                font: { size: 16, family: "'Inter', 'Noto Sans SC', sans-serif", weight: 'bold' }
-                            },
-                            tooltip: {
-                                backgroundColor: 'rgba(17, 24, 39, 0.9)',
-                                titleFont: { family: "'Inter', 'Noto Sans SC', sans-serif" },
-                                bodyFont: { family: "'Inter', 'Noto Sans SC', sans-serif" },
-                                padding: 12,
-                                cornerRadius: 8
-                            }
-                        },
-                        scales: isDoughnut ? undefined : {
-                            y: {
-                                beginAtZero: indexAxis === 'x',
-                                grid: { 
-                                    display: indexAxis === 'x',
-                                    color: 'rgba(243, 244, 246, 1)' 
-                                }
-                            },
-                            x: {
-                                beginAtZero: indexAxis === 'y',
-                                grid: { 
-                                    display: indexAxis === 'y',
-                                    color: 'rgba(243, 244, 246, 1)'
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-        });
-    </script>
-</body>
-</html>
-  `;
-};
-
-// ==========================================
+import { 
+  logger, getSetting, setSetting, db, taskEvents, withRetry, appendLog, appendTaskLog,
+  getLLMClient, getProxyAgent, sleep,   authenticateToken, requireAdmin, hashPassword, checkRateLimit,
+  recordFailedLogin, resetLoginAttempts, broadcastSystemStatus, broadcastLog, 
+  currentRunningTask, setCurrentRunningTask, jwtSecret
+} from './utils.js';
+import { buildKnowledgeBase, queryKnowledgeBase, buildSupplementalKnowledgeBase, DocumentChunk, searchBocha, createFeishuDoc, appendToFeishuDoc, generateHtmlReport, sendNotifications } from './rag.js';
 // 5. Core Deep Research Engine & Queue
 // ==========================================
 let runningTask: { id: string, topic: string, user: string, progress: number, status: string } | null = null;
 let taskQueue: { id: string, topic: string, user: string }[] = [];
 
-const runDeepResearch = async (taskId: string, topic: string, length: string, user: string) => {
+const runDeepResearch = async (taskId: string, topic: string, length: string, user: string, providedOutline?: any) => {
   runningTask = { id: taskId, topic, user, progress: 0, status: 'running' };
-  currentRunningTask = { taskId, username: user, topic };
+  setCurrentRunningTask({ taskId, username: user, topic });
   broadcastSystemStatus();
   const reportsDir = path.join(__dirname, 'reports');
   if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
@@ -1072,16 +56,21 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
   let filePath = '';
   const modelPlanner = getSetting('model_planner', 'qwen-plus');
   const modelWriter = getSetting('model_writer', 'qwen-plus');
+  const modelCritic = getSetting('model_critic', 'qwen-plus');
+  const currentDateStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
 
   try {
     broadcastLog(taskId, `🚀 任务启动：${topic}`, 'success');
     await sendNotifications(`🚀 深度研究已启动！\n课题：${topic}\n任务ID：${taskId}`);
 
-    broadcastLog(taskId, `🧠 正在调用规划师 (${modelPlanner}) 生成大纲...`);
-    const client = getLLMClient();
-    
-    const plannerPrompt = `你是一个只输出 JSON 的数据转换接口。
-当前日期：2026年3月。请基于此时间背景，对未来趋势进行前瞻性预测。
+    let outline = providedOutline;
+    if (outline) {
+      broadcastLog(taskId, `✅ 已接收用户确认的大纲，共 ${outline.chapters.length} 章。`);
+    } else {
+      broadcastLog(taskId, `🧠 正在调用规划师 (${modelPlanner}) 生成大纲...`);
+      
+      const plannerPrompt = `你是一个只输出 JSON 的数据转换接口。
+当前系统日期：${currentDateStr}。请基于此真实时间背景，对未来趋势进行前瞻性预测，并在提及“近几年”时以此日期为基准。
 请根据用户探讨的课题：【${topic}】，生成一份深度研究报告大纲。
 预期【正文】篇幅：${length}字（不含执行摘要、参考文献）。必须融入行业特性，体现深度思考。
 【致命约束】
@@ -1100,20 +89,20 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
   ]
 }`;
 
-    let outline;
-    try {
-      const plannerRes = await withRetry(() => client.chat.completions.create({
-        model: modelPlanner,
-        messages: [{ role: 'user', content: plannerPrompt }],
-        temperature: 0.1,
-      }));
+      try {
+        const plannerRes = await withRetry(() => getLLMClient('planner').chat.completions.create({
+          model: modelPlanner,
+          messages: [{ role: 'user', content: plannerPrompt }],
+          temperature: 0.1,
+        }), 3, 2000, broadcastLog, taskId);
 
-      let rawJson = plannerRes.choices[0].message.content || '';
-      rawJson = rawJson.replace(/```json/g, '').replace(/```/g, '').trim();
-      outline = JSON.parse(rawJson);
-    } catch (e: any) {
-      const errCode = e.response?.status || e.code || 'UNKNOWN';
-      throw new Error(`[大纲规划模块] 生成大纲失败。错误代码: ${errCode}, 原因: ${e.message}`);
+        let rawJson = plannerRes.choices[0].message.content || '';
+        rawJson = rawJson.replace(/```json/g, '').replace(/```/g, '').trim();
+        outline = JSON.parse(rawJson);
+      } catch (e: any) {
+        const errCode = e.response?.status || e.code || 'UNKNOWN';
+        throw new Error(`[大纲规划模块] 生成大纲失败。错误代码: ${errCode}, 原因: ${e.message}`);
+      }
     }
 
     // 生成带时间戳的文件名: 用户名-报告名-生成时间.md
@@ -1151,7 +140,7 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
     // 生成执行摘要
     try {
       broadcastLog(taskId, `📝 正在撰写执行摘要 (Executive Summary)...`);
-      const summaryPrompt = `你是一位顶级的战略咨询顾问。请根据报告标题【${outline.report_title}】和以下核心要点，撰写一份极具洞察力的“执行摘要（Executive Summary）”。
+      const summaryPrompt = `你是一位顶级的战略咨询顾问。当前系统日期：${currentDateStr}。请根据报告标题【${outline.report_title}】和以下核心要点，撰写一份极具洞察力的“执行摘要（Executive Summary）”。
       
 核心要点：${outline.executive_summary_points}
 
@@ -1161,17 +150,26 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 3. 给出具有前瞻性的战略建议。
 4. 篇幅约 500-800 字，直接输出正文，不要任何开场白。`;
 
-      const summaryRes = await withRetry(() => client.chat.completions.create({
+      const summaryRes = await withRetry(() => getLLMClient('writer').chat.completions.create({
         model: modelWriter,
         messages: [{ role: 'user', content: summaryPrompt }],
         temperature: 0.5,
-      }));
+      }), 3, 2000, broadcastLog, taskId);
       
       const summaryContent = `## 执行摘要 (Executive Summary)\n\n${summaryRes.choices[0].message.content || ''}\n\n---\n\n`;
       fs.appendFileSync(filePath, summaryContent);
       if (feishuDocId) await appendToFeishuDoc(feishuDocId, summaryContent);
     } catch (e: any) {
       broadcastLog(taskId, `⚠️ 执行摘要生成失败: ${e.message}`, 'warning');
+    }
+
+    const previousChapterSummaries: { chapter: string, summary: string }[] = [];
+    
+    let knowledgeBase: DocumentChunk[] = [];
+    try {
+      knowledgeBase = await buildKnowledgeBase(topic, outline, broadcastLog, taskId);
+    } catch (e: any) {
+      broadcastLog(taskId, `⚠️ 构建 RAG 知识库失败: ${e.message}。将降级使用传统单次检索。`, 'warning');
     }
 
     for (let i = 0; i < outline.chapters.length; i++) {
@@ -1181,9 +179,63 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
       
       let searchResults = '';
       try {
-        broadcastLog(taskId, `🌐 正在调用博查 API 检索素材...`);
-        searchResults = await withRetry(() => searchBocha(`${topic} ${chapter.chapter_title} ${chapter.core_points}`));
-        broadcastLog(taskId, `✅ 检索完成，获取到有效参考素材。`, 'success');
+        if (knowledgeBase.length > 0) {
+          broadcastLog(taskId, `🌐 正在从专属 RAG 知识库中检索本章素材...`);
+          searchResults = await queryKnowledgeBase(`${topic} ${chapter.chapter_title} ${chapter.core_points}`, knowledgeBase, 8);
+          broadcastLog(taskId, `✅ RAG 检索完成，已提取最相关的参考片段。`, 'success');
+          
+          // Multi-hop Research Logic
+          broadcastLog(taskId, `🕵️ 正在调用研究员智能体 (Research Agent) 评估素材饱和度...`);
+          const researchPrompt = `你是一位严谨的研究员。当前系统日期：${currentDateStr}。请评估以下检索到的参考素材是否足以支撑本章节的撰写。
+【课题名称】：${topic}
+【章节标题】：${chapter.chapter_title}
+【核心论点】：${chapter.core_points}
+
+【当前检索到的素材】：
+${searchResults}
+
+请判断当前素材是否充分（例如是否包含最新的具体数据、案例等）。如果信息不足，请提供 1-3 个具体的长尾搜索词（Query），以便进行二次深度检索。如果信息已经非常充分，请将 is_sufficient 设为 true。
+请严格按照以下 JSON 格式输出（不要输出任何其他内容）：
+{
+  "is_sufficient": false,
+  "reason": "缺乏2025年的具体市场规模数据和头部企业的最新市占率",
+  "new_queries": ["2025年 Q1 固态电池 市场规模", "2025年 宁德时代 固态电池 进展"]
+}`;
+          try {
+            const researchRes = await withRetry(() => getLLMClient('critic').chat.completions.create({
+              model: modelCritic,
+              messages: [{ role: 'user', content: researchPrompt }],
+              temperature: 0.3,
+            }), 3, 2000, broadcastLog, taskId);
+            
+            let researchResultStr = researchRes.choices[0].message.content || '{}';
+            const jsonMatch = researchResultStr.match(/\{[\s\S]*\}/);
+            if (jsonMatch) researchResultStr = jsonMatch[0];
+            const researchResult = JSON.parse(researchResultStr);
+            
+            if (!researchResult.is_sufficient && researchResult.new_queries && researchResult.new_queries.length > 0) {
+              broadcastLog(taskId, `⚠️ 素材饱和度不足：${researchResult.reason}`, 'warning');
+              broadcastLog(taskId, `🔍 触发多跳检索 (Multi-hop Research)，正在补充搜索：${researchResult.new_queries.join(', ')}`, 'info');
+              
+              const newChunks = await buildSupplementalKnowledgeBase(researchResult.new_queries, broadcastLog, taskId);
+              if (newChunks.length > 0) {
+                knowledgeBase.push(...newChunks);
+                broadcastLog(taskId, `✅ 补充检索完成，知识库新增 ${newChunks.length} 个文本块。重新检索本章素材...`, 'success');
+                searchResults = await queryKnowledgeBase(`${topic} ${chapter.chapter_title} ${chapter.core_points}`, knowledgeBase, 12);
+              } else {
+                 broadcastLog(taskId, `⚠️ 补充检索未获取到有效新信息，继续使用现有素材。`, 'warning');
+              }
+            } else {
+              broadcastLog(taskId, `✅ 素材饱和度评估通过，信息已充分。`, 'success');
+            }
+          } catch (e: any) {
+            broadcastLog(taskId, `⚠️ 饱和度评估失败，跳过补充检索: ${e.message}`, 'warning');
+          }
+        } else {
+          broadcastLog(taskId, `🌐 正在调用博查 API 检索素材...`);
+          searchResults = await withRetry(() => searchBocha(`${topic} ${chapter.chapter_title} ${chapter.core_points}`, broadcastLog, taskId));
+          broadcastLog(taskId, `✅ 检索完成，获取到有效参考素材。`, 'success');
+        }
       } catch (e: any) {
         const errCode = e.response?.status || e.code || 'UNKNOWN';
         broadcastLog(taskId, `⚠️ [检索模块] 检索失败，将基于大模型自身知识撰写。错误代码: ${errCode}, 原因: ${e.message}`, 'warning');
@@ -1192,10 +244,19 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 
       try {
         broadcastLog(taskId, `✍️ 正在调用撰稿人 (${modelWriter}) 撰写本章正文...`);
-        const writerPrompt = `你是一位顶级的学术研究员与行业资深撰稿人。
-当前日期：2026年3月。请基于此时间背景，对未来趋势进行前瞻性预测。
-请根据【课题名称】、【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
+        
+        let contextPrompt = '';
+        if (previousChapterSummaries.length > 0) {
+          contextPrompt = `\n【前文内容摘要（全局记忆）】\n为了保证报告的连贯性，以下是前几章的核心内容摘要。请在撰写本章时，注意与前文的逻辑衔接，必要时可使用“正如前文所述”、“基于上一章的分析”等过渡语：\n`;
+          previousChapterSummaries.forEach(s => {
+            contextPrompt += `- ${s.chapter}: ${s.summary}\n`;
+          });
+        }
 
+        const writerPrompt = `你是一位顶级的学术研究员与行业资深撰稿人。
+当前系统日期：${currentDateStr}。请基于此真实时间背景，对未来趋势进行前瞻性预测，并在提及“近几年”、“当前”时严格以此日期为基准。
+请根据【课题名称】、【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
+${contextPrompt}
 【学术规范与行文要求】
 1. 严禁偏离主题：本章正文必须严格围绕【课题名称】、【章节标题】和【核心论点】展开，严禁插入任何与本课题无关的内容（如AI大模型、固态储氢、碳排放等，除非课题本身相关）。
 2. 章节编号：本章是报告的第 ${i + 1} 章。请务必使用 Markdown 二级标题（##）作为本章的主标题，例如：“## 第 ${i + 1} 章：${chapter.chapter_title}”。本章内的所有子标题请使用三级（###）或四级（####）标题。
@@ -1203,16 +264,30 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 4. 行业洞察：融入你作为资深专家的行业思考，对技术瓶颈、市场博弈、政策导向进行深度推演。
 5. 可视化图表：请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格。**严禁使用 Mermaid 语法**。在表格前必须提供一个描述性的标题（使用标准的 Markdown 三级或四级标题，例如：### 2025年市场规模对比），以便系统自动生成图表标题。请根据数据类型提供不同结构的表格，例如：时间序列数据（年份/月份/季度作为第一列）、占比数据（单列数值，分类少于8个）、多维对比数据等，以便系统自动渲染为折线图、饼图或柱状图。注意：标题标记（#）不要重复，例如绝对不要写成“### ### 标题”或“#### ### 标题”。
 6. 案例分析格式：若涉及案例研究，请使用“【案例分析】”标识，并采用缩进或引用块（>）形式突出显示，包含：背景、核心举措、成效评估、启示。
-7. 数据标注规范：
-   - 数据引用：所有关键数据必须在句末使用方括号上标形式标注，如 [1]、[2]。
-   - 引用格式：参考学术期刊规范（GB/T 7714-2015）。
-8. 参考文献列表：必须在本章正文的最后，设立“### 参考文献与数据源”小节，按顺序排列。格式如下：
-   - 网页/新闻：[序号] 作者. 标题 [EB/OL]. (发布日期) [引用日期]. URL.
-   - 报告/期刊：[序号] 作者. 标题 [J/R]. 刊名/机构, 年份.
+7. 强溯源与数据标注规范（解决幻觉）：
+   - 只能从提供的【参考素材】中引用数据和观点，严禁凭空捏造数据或参考文献。
+   - 所有关键数据和观点必须在句末使用方括号上标形式标注，如 [1]、[2]。
+8. 交叉验证与事实核查（Fact-Checker）：
+   - 如果两篇或多篇文档对同一个数据（如某行业市场规模、增长率等）给出了不同的数值，你必须同时列出不同来源的数据。
+   - 分析数据差异的可能原因（如统计口径、发布时间、预测模型不同）。
+   - 优先采信官方机构（如政府官网 .gov）、权威学术机构（.edu）或知名咨询公司/权威媒体的数据，并在正文中明确说明采信理由。
+9. 参考文献列表：必须在本章正文的最后，设立“### 参考文献与数据源”小节，按顺序排列。
+   - 必须使用【参考素材】中提供的真实来源标题和 URL。
+   - 格式要求：[序号] [来源标题](URL)
    示例：
-   [1] 某行业研究中心. 2025-2030年行业深度研究报告 [R]. 某研究机构, 2025.
-   [2] 权威新闻网. 行业最新动态观察 [EB/OL]. (2026-01-15) [2026-03-12]. http://...
-9. 严禁废话：直接输出正文，绝对不要输出任何开场白或结束语。
+   [1] [2025年中国新能源产业发展报告](https://example.com/report2025)
+   [2] [国家统计局：最新人口结构数据](https://example.com/data)
+10. 严禁废话：直接输出正文，绝对不要输出任何开场白或结束语。
+11. 上下文连贯：请参考【前文内容摘要】，在合适的段落（如开头或过渡段）自然地呼应前文，确保整份报告逻辑是一个整体，避免各章节割裂。
+12. 动态大纲申请（可选）：如果在撰写本章的过程中，你发现某个子课题极其重要且资料丰富，值得单独成为一个新的章节，你可以在正文的**最末尾**（参考文献之后）使用以下 XML 格式向系统申请追加新章节。如果没有必要，请不要输出此部分。
+<suggested_new_sections>
+[
+  {
+    "chapter_title": "新章节的标题",
+    "core_points": "新章节的核心论点和主要内容描述"
+  }
+]
+</suggested_new_sections>
 
 课题名称：${topic}
 章节标题：${chapter.chapter_title}
@@ -1221,30 +296,151 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 参考素材：
 ${searchResults}`;
 
-        const writerRes = await withRetry(() => client.chat.completions.create({
-          model: modelWriter,
-          messages: [{ role: 'user', content: writerPrompt }],
-          temperature: 0.6,
-        }));
+        let finalContent = '';
+        let retryCount = 0;
+        const maxRetries = 2;
+        let criticFeedback = '';
 
-        let content = writerRes.choices[0].message.content || '';
-        
-        // 防止标题重复：如果内容没有以 ## 开头，或者没有包含当前章节标题，则手动加上
-        let finalContent = content;
-        // 强制确保章节标题是二级标题 (##)
-        finalContent = finalContent.replace(/^(#|###|####)\s+(第\s*\d+\s*章.*)/m, '## $2');
-        // 修复重复的标题标记，如 "### ### 标题"
-        finalContent = finalContent.replace(/^ {0,3}(#{1,6})\s+#{1,6}\s+/gm, '$1 ');
-        // 修复缺少空格的标题标记，如 "###标题"
-        finalContent = finalContent.replace(/^ {0,3}(#{1,6})([^#\s])/gm, '$1 $2');
-        // 修复被加粗的标题标记，如 "**### 标题**"
-        finalContent = finalContent.replace(/^ {0,3}\*\*(#{1,6})\s+(.*?)\*\*/gm, '$1 **$2**');
-        if (!finalContent.includes(chapter.chapter_title)) {
-          finalContent = `## 第 ${i + 1} 章：${chapter.chapter_title}\n\n${finalContent}`;
+        while (retryCount <= maxRetries) {
+          const currentWriterPrompt = writerPrompt + (criticFeedback ? `\n\n【审稿人修改意见】\n你之前生成的草稿存在以下问题，请严格按照以下意见进行修改重写：\n${criticFeedback}` : '');
+          
+          const writerRes = await withRetry(() => getLLMClient('writer').chat.completions.create({
+            model: modelWriter,
+            messages: [{ role: 'user', content: currentWriterPrompt }],
+            temperature: 0.6,
+          }), 3, 2000, broadcastLog, taskId);
+
+          let content = writerRes.choices[0].message.content || '';
+          
+          // 防止标题重复：如果内容没有以 ## 开头，或者没有包含当前章节标题，则手动加上
+          finalContent = content;
+          // 强制确保章节标题是二级标题 (##)
+          finalContent = finalContent.replace(/^(#|###|####)\s+(第\s*\d+\s*章.*)/m, '## $2');
+          // 修复重复的标题标记，如 "### ### 标题"
+          finalContent = finalContent.replace(/^ {0,3}(#{1,6})\s+#{1,6}\s+/gm, '$1 ');
+          // 修复缺少空格的标题标记，如 "###标题"
+          finalContent = finalContent.replace(/^ {0,3}(#{1,6})([^#\s])/gm, '$1 $2');
+          // 修复被加粗的标题标记，如 "**### 标题**"
+          finalContent = finalContent.replace(/^ {0,3}\*\*(#{1,6})\s+(.*?)\*\*/gm, '$1 **$2**');
+          if (!finalContent.includes(chapter.chapter_title)) {
+            finalContent = `## 第 ${i + 1} 章：${chapter.chapter_title}\n\n${finalContent}`;
+          }
+
+          // 调用审稿人
+          broadcastLog(taskId, `🧐 正在调用审稿人 (${modelCritic}) 进行审查 (第 ${retryCount + 1} 次尝试)...`);
+          const criticPrompt = `你是一位严苛的报告审稿人与事实核查员（Fact-Checker）。当前系统日期：${currentDateStr}。请严格对比【作者草稿】与【参考素材】，对草稿进行深度审查。
+
+【审查标准】
+1. 事实核查（致命项）：草稿中出现的任何具体数据（如金额、百分比、年份、专有名词），是否能在【参考素材】中找到明确出处？如果发现草稿捏造了素材中不存在的数据（幻觉），请立即打回（低于80分），并明确指出具体是哪一句话造假。
+2. 是否跑题？（必须严格围绕课题和章节标题展开）
+3. 内容充实度？（字数是否达标，论述是否深入）
+4. 数据图表？（必须包含至少一个 Markdown 格式的数据表格，且表格数据必须来源于参考素材）
+
+【课题名称】：${topic}
+【章节标题】：${chapter.chapter_title}
+【核心论点】：${chapter.core_points}
+
+【参考素材】（证据链）：
+${searchResults}
+
+【作者草稿】：
+${finalContent}
+
+请严格按照以下 JSON 格式输出审查结果（不要输出任何其他内容，必须是合法的 JSON）：
+{
+  "score": 85,
+  "feedback": "如果低于80分，请给出具体的修改意见（特别是指出哪些数据存在幻觉）；如果高于80分，可简短肯定。"
+}`;
+
+          try {
+            const criticRes = await withRetry(() => getLLMClient('critic').chat.completions.create({
+              model: modelCritic,
+              messages: [{ role: 'user', content: criticPrompt }],
+              temperature: 0.1,
+            }), 3, 2000, broadcastLog, taskId);
+            
+            let criticResultStr = criticRes.choices[0].message.content || '{}';
+            // 尝试提取 JSON
+            const jsonMatch = criticResultStr.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              criticResultStr = jsonMatch[0];
+            }
+            const criticResult = JSON.parse(criticResultStr);
+            
+            if (criticResult.score >= 80) {
+              broadcastLog(taskId, `✅ 审稿通过！得分: ${criticResult.score}`, 'success');
+              break;
+            } else {
+              if (retryCount < maxRetries) {
+                broadcastLog(taskId, `⚠️ 审稿未通过 (得分: ${criticResult.score})。打回重写，意见: ${criticResult.feedback}`, 'warning');
+                criticFeedback = criticResult.feedback;
+              } else {
+                broadcastLog(taskId, `⚠️ 审稿未通过，但已达到最大重试次数，强制采用当前版本。`, 'warning');
+              }
+            }
+          } catch (e: any) {
+            broadcastLog(taskId, `⚠️ 审稿过程发生错误，跳过审查: ${e.message}`, 'warning');
+            break; // 审稿出错则直接采用当前草稿
+          }
+          
+          retryCount++;
         }
         
+        // 提取动态大纲申请 (Tree of Thoughts)
+        const newSectionsMatch = finalContent.match(/<suggested_new_sections>([\s\S]*?)<\/suggested_new_sections>/);
+        if (newSectionsMatch) {
+          try {
+            let newSectionsJson = newSectionsMatch[1].trim();
+            // 移除可能存在的 Markdown 代码块标记
+            newSectionsJson = newSectionsJson.replace(/^```\w*\s*/, '').replace(/\s*```$/, '').trim();
+            const newSections = JSON.parse(newSectionsJson);
+            if (Array.isArray(newSections) && newSections.length > 0) {
+              const validSections = newSections.filter(s => s.chapter_title && s.core_points);
+              if (validSections.length > 0) {
+                broadcastLog(taskId, `🌱 触发动态大纲 (Tree of Thoughts)：AI 申请追加 ${validSections.length} 个新章节`, 'info');
+                // 插入到当前章节之后
+                let insertIndex = i + 1;
+                validSections.forEach((s, idx) => {
+                  outline.chapters.splice(insertIndex + idx, 0, {
+                    chapter_num: outline.chapters.length + 1, // 编号仅作参考，实际以循环顺序为准
+                    chapter_title: s.chapter_title,
+                    core_points: s.core_points
+                  });
+                });
+                broadcastLog(taskId, `✅ 动态大纲已更新，新增章节：${validSections.map(s => s.chapter_title).join(', ')}`, 'success');
+              }
+            }
+          } catch (e) {
+            logger.error(`Failed to parse suggested_new_sections: ${e}`);
+          }
+          // 从正文中移除该标记及其可能包含的 Markdown 代码块标记
+          finalContent = finalContent.replace(/(?:```\w*\s*)?<suggested_new_sections>[\s\S]*?<\/suggested_new_sections>(?:\s*```)?/, '').trim();
+        }
+
         fs.appendFileSync(filePath, `${finalContent}\n\n`);
         
+        // 生成本章摘要，更新全局记忆
+        try {
+          broadcastLog(taskId, `📝 正在提取本章摘要，更新全局记忆库...`);
+          const summaryPrompt = `请将以下报告章节内容压缩成150字左右的核心摘要，只保留最重要的结论和数据，用于后续章节的上下文记忆：\n\n${finalContent}`;
+          const summaryRes = await withRetry(() => getLLMClient('planner').chat.completions.create({
+            model: modelPlanner,
+            messages: [{ role: 'user', content: summaryPrompt }],
+            temperature: 0.3,
+          }), 3, 2000, broadcastLog, taskId);
+          const summary = summaryRes.choices[0].message.content || '';
+          previousChapterSummaries.push({
+            chapter: `第 ${i + 1} 章：${chapter.chapter_title}`,
+            summary: summary.trim()
+          });
+        } catch (e: any) {
+          logger.error(`Failed to generate summary for chapter ${i + 1}: ${e.message}`);
+          previousChapterSummaries.push({
+            chapter: `第 ${i + 1} 章：${chapter.chapter_title}`,
+            summary: chapter.core_points
+          });
+        }
+
         // 同步到飞书文档
         if (feishuDocId) {
           try {
@@ -1262,7 +458,7 @@ ${searchResults}`;
         fs.appendFileSync(filePath, `## ${chapter.chapter_title}\n\n>[系统提示：本章节生成超时或API无响应，为防止工作流中断已跳过，请人工补充]\n\n`);
       }
 
-      if (chapter.chapter_num < outline.chapters.length) {
+      if (i < outline.chapters.length - 1) {
         broadcastLog(taskId, `⏳ 触发防限流机制，休眠 15 秒...`, 'info');
         await sleep(15000);
       }
@@ -1316,7 +512,7 @@ ${searchResults}`;
     taskEvents.emit(`done-${taskId}`);
   } finally {
     runningTask = null;
-    currentRunningTask = null;
+    setCurrentRunningTask(null);
     broadcastSystemStatus();
     if (taskQueue.length > 0) {
       const nextTask = taskQueue.shift()!;
@@ -1462,11 +658,14 @@ app.post('/api/system/setup', (req, res) => {
 
 // Test API Connections
 app.post('/api/test/llm', async (req, res) => {
-  const { aliyun_api_key, llm_base_url, model_planner, http_proxy } = req.body;
+  const { aliyun_api_key, llm_base_url, model_planner, http_proxy, planner_api_key, planner_base_url } = req.body;
   const diagnostics: any[] = [];
   
+  const apiKey = planner_api_key || aliyun_api_key;
+  const baseURL = planner_base_url || llm_base_url || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  
   try {
-    const url = new URL(llm_base_url || 'https://dashscope.aliyuncs.com/compatible-mode/v1');
+    const url = new URL(baseURL);
     diagnostics.push(`Testing connectivity to: ${url.hostname}`);
     
     // DNS Test
@@ -1492,8 +691,8 @@ app.post('/api/test/llm', async (req, res) => {
     }
 
     const options: any = { 
-      apiKey: aliyun_api_key, 
-      baseURL: llm_base_url || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      apiKey, 
+      baseURL,
       timeout: 30000,
       maxRetries: 0
     };
@@ -1811,7 +1010,16 @@ app.delete('/api/users/:id', authenticateToken, requireAdmin, (req: any, res: an
 
 // Settings API
 app.get('/api/settings', authenticateToken, requireAdmin, (req, res) => {
-  const keys = ['aliyun_api_key', 'llm_base_url', 'model_planner', 'model_writer', 'bocha_api_key', 'tg_bot_token', 'tg_chat_id', 'feishu_app_id', 'feishu_app_secret', 'http_proxy'];
+  const keys = [
+    'aliyun_api_key', 'llm_base_url', 
+    'model_planner', 'model_writer', 'model_critic', 'model_embedding', 'model_vision',
+    'planner_api_key', 'planner_base_url',
+    'writer_api_key', 'writer_base_url',
+    'critic_api_key', 'critic_base_url',
+    'embedding_api_key', 'embedding_base_url',
+    'vision_api_key', 'vision_base_url',
+    'bocha_api_key', 'tg_bot_token', 'tg_chat_id', 'feishu_app_id', 'feishu_app_secret', 'http_proxy'
+  ];
   const settings: Record<string, string> = {};
   keys.forEach(k => settings[k] = getSetting(k));
   res.json(settings);
@@ -1829,7 +1037,7 @@ app.post('/api/settings', authenticateToken, requireAdmin, (req, res) => {
 // Task API
 app.post('/api/research', authenticateToken, (req, res) => {
   try {
-    const { topic, length } = req.body;
+    const { topic, length, outline } = req.body;
     if (!topic) return res.status(400).json({ error: 'Topic is required' });
 
     const taskId = Date.now().toString();
@@ -1863,7 +1071,7 @@ app.post('/api/research', authenticateToken, (req, res) => {
     db.prepare('UPDATE users SET quota = quota - 1, used_quota = used_quota + 1, daily_used = daily_used + 1 WHERE username = ?').run(user);
     
     logger.info(`User ${user} started research task: ${topic}`);
-    runDeepResearch(taskId, topic, length, user);
+    runDeepResearch(taskId, topic, length, user, outline);
     
     res.json({ taskId, message: 'Task started successfully' });
   } catch (e: any) {
@@ -2037,6 +1245,24 @@ app.get('/api/research/:id/stream', (req, res) => {
   const onLog = (data: string) => res.write(`data: ${data}\n\n`);
   const onDone = (data: string = "{}") => res.write(`event: done\ndata: ${data}\n\n`);
 
+  // Send existing logs first to prevent "Waiting for server logs..." if frontend connects late
+  try {
+    const logFile = path.join(__dirname, 'logs', `task-${taskId}.log`);
+    if (fs.existsSync(logFile)) {
+      const content = fs.readFileSync(logFile, 'utf-8');
+      const lines = content.split('\n').filter(line => line.trim());
+      lines.forEach(line => {
+        const match = line.match(/^\[(.*?)\] \[(.*?)\] (.*)$/);
+        if (match) {
+          const [_, timestamp, level, message] = match;
+          res.write(`data: ${JSON.stringify({ timestamp, message, type: level.toLowerCase() })}\n\n`);
+        }
+      });
+    }
+  } catch (e) {
+    logger.error(`Failed to fetch existing logs for SSE: ${e}`);
+  }
+
   taskEvents.on(`log-${taskId}`, onLog);
   taskEvents.on(`done-${taskId}`, onDone);
 
@@ -2055,10 +1281,20 @@ app.get('/api/research/:id/stream', (req, res) => {
 // Chat API (for outline generation)
 app.post('/api/chat', authenticateToken, async (req, res) => {
   try {
-    const client = getLLMClient();
+    const client = getLLMClient('planner');
+    
+    const currentDateStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+    const messages = [
+      { 
+        role: 'system', 
+        content: `你是一个专业的行业分析师。当前系统日期：${currentDateStr}。你的任务是通过多轮对话（共4-5轮）向用户提问，以明确研究报告的边界、重点企业和特殊要求。每次提出3-5个核心问题，然后等待用户回答。绝对不要自己模拟完整的对话过程，不要自问自答。` 
+      },
+      ...req.body.messages
+    ];
+
     const response = await client.chat.completions.create({
       model: getSetting('model_planner', 'qwen-plus'),
-      messages: req.body.messages,
+      messages: messages,
     });
     res.json({ reply: response.choices[0].message.content });
   } catch (e: any) {
@@ -2070,8 +1306,9 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
 app.post('/api/generate-outline', authenticateToken, async (req, res) => {
   try {
     const { topic, length } = req.body;
-    const client = getLLMClient();
-    const prompt = `你是一个只输出 JSON 的数据转换接口。请根据用户探讨的课题：【${topic}】，生成一份深度研究报告大纲。预期篇幅：${length}字。
+    const client = getLLMClient('planner');
+    const currentDateStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+    const prompt = `你是一个只输出 JSON 的数据转换接口。当前系统日期：${currentDateStr}。请基于此真实时间背景，对未来趋势进行前瞻性预测。请根据用户探讨的课题：【${topic}】，生成一份深度研究报告大纲。预期篇幅：${length}字。
 必须严格遵守以下 JSON 结构：
 {
   "report_title": "报告主标题",

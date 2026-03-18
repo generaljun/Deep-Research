@@ -70,6 +70,19 @@ export default function App() {
     llm_base_url: '',
     model_planner: '',
     model_writer: '',
+    model_critic: '',
+    model_embedding: '',
+    model_vision: '',
+    planner_api_key: '',
+    planner_base_url: '',
+    writer_api_key: '',
+    writer_base_url: '',
+    critic_api_key: '',
+    critic_base_url: '',
+    embedding_api_key: '',
+    embedding_base_url: '',
+    vision_api_key: '',
+    vision_base_url: '',
     bocha_api_key: '',
     tg_bot_token: '',
     tg_chat_id: '',
@@ -87,7 +100,11 @@ export default function App() {
     const vendor = AI_VENDORS.find(v => v.name === vendorName);
     if (vendor && vendor.baseUrl) {
       handleChange('llm_base_url', vendor.baseUrl);
-      if (vendor.models.length > 0) handleChange('model_planner', vendor.models[0]);
+      if (vendor.models.length > 0) {
+        handleChange('model_planner', vendor.models[0]);
+        handleChange('model_writer', vendor.models[0]);
+        handleChange('model_critic', vendor.models[0]);
+      }
     }
   };
 
@@ -248,7 +265,7 @@ export default function App() {
           <div className="flex items-center gap-1 md:gap-2 bg-slate-50/80 dark:bg-[#030712]/80 p-1.5 rounded-2xl border border-slate-100 dark:border-cyan-900/30 shadow-inner dark:shadow-none transition-colors duration-500 w-full md:w-auto overflow-x-auto [&::-webkit-scrollbar]:hidden">
             <button
               onClick={() => setActiveTab('generator')}
-              className={`px-3 py-1.5 md:px-5 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap ${
+              className={`shrink-0 px-3 py-1.5 md:px-5 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'generator' 
                   ? 'bg-white dark:bg-gradient-to-r dark:from-cyan-600 dark:to-blue-600 text-blue-600 dark:text-white shadow-sm border border-slate-100 dark:border-transparent' 
                   : 'text-slate-500 dark:text-cyan-400/60 hover:text-slate-700 dark:hover:text-cyan-300 hover:bg-slate-100/50 dark:hover:bg-cyan-900/20'
@@ -259,7 +276,7 @@ export default function App() {
             </button>
             <button
               onClick={() => setActiveTab('reports')}
-              className={`px-3 py-1.5 md:px-5 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap ${
+              className={`shrink-0 px-3 py-1.5 md:px-5 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'reports' 
                   ? 'bg-white dark:bg-gradient-to-r dark:from-cyan-600 dark:to-blue-600 text-blue-600 dark:text-white shadow-sm border border-slate-100 dark:border-transparent' 
                   : 'text-slate-500 dark:text-cyan-400/60 hover:text-slate-700 dark:hover:text-cyan-300 hover:bg-slate-100/50 dark:hover:bg-cyan-900/20'
@@ -271,7 +288,7 @@ export default function App() {
             {user?.role === 'admin' && (
               <button
                 onClick={() => setActiveTab('admin')}
-                className={`px-3 py-1.5 md:px-5 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap ${
+                className={`shrink-0 px-3 py-1.5 md:px-5 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap ${
                   activeTab === 'admin' 
                     ? 'bg-white dark:bg-gradient-to-r dark:from-cyan-600 dark:to-blue-600 text-blue-600 dark:text-white shadow-sm border border-slate-100 dark:border-transparent' 
                     : 'text-slate-500 dark:text-cyan-400/60 hover:text-slate-700 dark:hover:text-cyan-300 hover:bg-slate-100/50 dark:hover:bg-cyan-900/20'
@@ -281,7 +298,7 @@ export default function App() {
                 中枢控制台
               </button>
             )}
-            <div className="hidden md:block w-px h-6 bg-slate-200 dark:bg-cyan-900/50 mx-1"></div>
+            <div className="hidden md:block shrink-0 w-px h-6 bg-slate-200 dark:bg-cyan-900/50 mx-1"></div>
 
             <div className="flex items-center bg-slate-100/50 dark:bg-[#0a0a0a]/50 rounded-xl p-1 ml-auto md:ml-0 shrink-0">
               <button
@@ -308,13 +325,13 @@ export default function App() {
             </div>
             <button
               onClick={() => setShowChangePassword(true)}
-              className="px-5 py-2 rounded-xl text-sm font-semibold text-blue-500 dark:text-cyan-400 hover:text-blue-600 dark:hover:text-cyan-300 hover:bg-blue-50 dark:hover:bg-cyan-900/20 transition-all duration-300"
+              className="shrink-0 px-5 py-2 rounded-xl text-sm font-semibold text-blue-500 dark:text-cyan-400 hover:text-blue-600 dark:hover:text-cyan-300 hover:bg-blue-50 dark:hover:bg-cyan-900/20 transition-all duration-300"
             >
               修改密码
             </button>
             <button
               onClick={handleLogout}
-              className="px-5 py-2 rounded-xl text-sm font-semibold text-red-500 dark:text-red-500 dark:text-red-400/80 hover:text-red-600 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-300"
+              className="shrink-0 px-5 py-2 rounded-xl text-sm font-semibold text-red-500 dark:text-red-500 dark:text-red-400/80 hover:text-red-600 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-300"
             >
               退出
             </button>
@@ -668,7 +685,13 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
     
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setLogs(prev => [...prev, data]);
+      setLogs(prev => {
+        // Prevent duplicate logs
+        if (prev.some(log => log.message === data.message && log.timestamp === data.timestamp)) {
+          return prev;
+        }
+        return [...prev, data];
+      });
     };
 
     eventSource.addEventListener('done', (e: any) => {
@@ -689,14 +712,16 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
 
   const handleStartChat = () => {
     if (!topic.trim()) return;
-    const initialMsg = `我想写一份关于【${topic}】的深度研究报告，字数预期在 ${length} 字。请作为专业的行业分析师，通过最多4轮简短的追问，帮我明确研究的边界、重点企业和特殊要求，最后在第5轮直接输出结构化大纲。`;
+    const initialMsg = `我想写一份关于【${topic}】的深度研究报告，字数预期在 ${length} 字。请作为专业的行业分析师，通过4-5轮的追问，帮我明确研究的边界、重点企业和特殊要求，最后在最后一轮直接输出结构化大纲。
+⚠️ 严格指令：请不要自己模拟多轮对话！现在，请直接向我提出第一轮的3-5个核心问题，然后停止输出，等待我的回答。`;
     setMessages([{ role: 'user', content: initialMsg }]);
     setStep(2);
     sendMessage(initialMsg);
   };
 
+  const currentYear = new Date().getFullYear();
   const TOPIC_TEMPLATES = [
-    "2026年氢动力无人机的最新进展",
+    `${currentYear}年氢动力无人机的最新进展`,
     "全球半导体供应链重构观察",
     "中国AI大模型行业研究报告",
     "低空经济：eVTOL商业化路径分析",
@@ -791,7 +816,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ topic: outline?.report_title || topic, length }),
+        body: JSON.stringify({ topic: outline?.report_title || topic, length, outline }),
       });
       
       if (!res.ok) {
@@ -887,7 +912,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                       value={topic}
                       onChange={(e) => setTopic(e.target.value)}
                       disabled={systemStatus.isBusy}
-                      placeholder="例如：2026年氢动力无人机的最新进展"
+                      placeholder={`例如：${currentYear}年氢动力无人机的最新进展`}
                       className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl pl-4 pr-12 py-4 text-slate-800 dark:text-cyan-50 placeholder:text-blue-800 dark:text-cyan-800 focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 focus:border-blue-500 dark:border-cyan-500 transition-all shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 flex gap-1">
@@ -1141,9 +1166,9 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
               />
               <div className="space-y-8">
                 {outline.chapters.map((ch, idx) => (
-                  <div key={ch.chapter_num} className="flex gap-5 group">
+                  <div key={ch.chapter_num || idx} className="flex gap-5 group">
                     <div className="w-10 h-10 rounded-xl bg-blue-50/50 dark:bg-cyan-950/50 border border-slate-200 dark:border-cyan-800 flex items-center justify-center text-sm font-black text-blue-400 dark:text-cyan-500 shrink-0 group-hover:bg-blue-100 dark:bg-cyan-900 group-hover:border-blue-500 dark:border-cyan-500 transition-all shadow-[0_0_10px_rgba(6,182,212,0.05)]">
-                      {String(ch.chapter_num).padStart(2, '0')}
+                      {String(ch.chapter_num || idx + 1).padStart(2, '0')}
                     </div>
                     <div className="flex-1 space-y-2">
                       <input 
@@ -1676,7 +1701,11 @@ const handleVendorChange = (vendorName: string) => {
   const vendor = AI_VENDORS.find(v => v.name === vendorName);
   if (vendor && vendor.baseUrl) {
     handleChange('llm_base_url', vendor.baseUrl);
-    if (vendor.models.length > 0) handleChange('model_planner', vendor.models[0]);
+    if (vendor.models.length > 0) {
+      handleChange('model_planner', vendor.models[0]);
+      handleChange('model_writer', vendor.models[0]);
+      handleChange('model_critic', vendor.models[0]);
+    }
   }
 };
 
@@ -1773,22 +1802,81 @@ const handleSearchChange = (searchName: string) => {
                   <input type="text" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" value={settings.llm_base_url} onChange={e => handleChange('llm_base_url', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl p-4">
                   <TooltipLabel 
                     label="规划师模型 (Planner)" 
                     title="大纲生成模型" 
                     desc="负责理解用户意图、规划报告结构和生成大纲。建议使用推理能力强的模型，如 qwen-max 或 gpt-4o。" 
                   />
-                  <input type="text" placeholder="qwen-max" value={settings.model_planner} onChange={e => handleChange('model_planner', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
+                  <input type="text" placeholder="qwen-max" value={settings.model_planner} onChange={e => handleChange('model_planner', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
+                  <details className="mt-3 group">
+                    <summary className="text-xs text-slate-500 dark:text-cyan-600 cursor-pointer hover:text-blue-500 dark:hover:text-cyan-400 select-none">独立 API 配置 (可选)</summary>
+                    <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-100 dark:border-cyan-900/30">
+                      <input type="password" placeholder="独立 API Key (留空则使用全局)" value={settings.planner_api_key || ''} onChange={e => handleChange('planner_api_key', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                      <input type="text" placeholder="独立 Base URL (留空则使用全局)" value={settings.planner_base_url || ''} onChange={e => handleChange('planner_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                    </div>
+                  </details>
                 </div>
-                <div>
+                <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl p-4">
                   <TooltipLabel 
                     label="撰稿人模型 (Writer)" 
                     title="正文撰写模型" 
                     desc="负责根据大纲和检索结果撰写长文。建议使用长文本生成能力强、性价比高的模型，如 qwen-plus 或 gpt-4o-mini。" 
                   />
-                  <input type="text" placeholder="qwen-plus" value={settings.model_writer} onChange={e => handleChange('model_writer', e.target.value)} className="w-full bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-2.5 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
+                  <input type="text" placeholder="qwen-plus" value={settings.model_writer} onChange={e => handleChange('model_writer', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
+                  <details className="mt-3 group">
+                    <summary className="text-xs text-slate-500 dark:text-cyan-600 cursor-pointer hover:text-blue-500 dark:hover:text-cyan-400 select-none">独立 API 配置 (可选)</summary>
+                    <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-100 dark:border-cyan-900/30">
+                      <input type="password" placeholder="独立 API Key (留空则使用全局)" value={settings.writer_api_key || ''} onChange={e => handleChange('writer_api_key', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                      <input type="text" placeholder="独立 Base URL (留空则使用全局)" value={settings.writer_base_url || ''} onChange={e => handleChange('writer_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                    </div>
+                  </details>
+                </div>
+                <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl p-4">
+                  <TooltipLabel 
+                    label="审稿人模型 (Critic)" 
+                    title="反思与审查模型" 
+                    desc="负责检查 Writer 生成的内容是否跑题、字数达标、包含图表且无幻觉。建议使用速度快、成本低的模型，如 qwen-turbo 或 gpt-4o-mini。" 
+                  />
+                  <input type="text" placeholder="qwen-turbo" value={settings.model_critic} onChange={e => handleChange('model_critic', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
+                  <details className="mt-3 group">
+                    <summary className="text-xs text-slate-500 dark:text-cyan-600 cursor-pointer hover:text-blue-500 dark:hover:text-cyan-400 select-none">独立 API 配置 (可选)</summary>
+                    <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-100 dark:border-cyan-900/30">
+                      <input type="password" placeholder="独立 API Key (留空则使用全局)" value={settings.critic_api_key || ''} onChange={e => handleChange('critic_api_key', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                      <input type="text" placeholder="独立 Base URL (留空则使用全局)" value={settings.critic_base_url || ''} onChange={e => handleChange('critic_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                    </div>
+                  </details>
+                </div>
+                <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl p-4">
+                  <TooltipLabel 
+                    label="向量模型 (Embedding)" 
+                    title="RAG 知识库检索模型" 
+                    desc="用于将参考资料向量化，以便 Writer 实时检索。建议使用 text-embedding-v3 等支持高维向量的模型。" 
+                  />
+                  <input type="text" placeholder="text-embedding-v3" value={settings.model_embedding || ''} onChange={e => handleChange('model_embedding', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
+                  <details className="mt-3 group">
+                    <summary className="text-xs text-slate-500 dark:text-cyan-600 cursor-pointer hover:text-blue-500 dark:hover:text-cyan-400 select-none">独立 API 配置 (可选)</summary>
+                    <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-100 dark:border-cyan-900/30">
+                      <input type="password" placeholder="独立 API Key (留空则使用全局)" value={settings.embedding_api_key || ''} onChange={e => handleChange('embedding_api_key', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                      <input type="text" placeholder="独立 Base URL (留空则使用全局)" value={settings.embedding_base_url || ''} onChange={e => handleChange('embedding_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                    </div>
+                  </details>
+                </div>
+                <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl p-4">
+                  <TooltipLabel 
+                    label="视觉模型 (Vision)" 
+                    title="多模态图表解析模型" 
+                    desc="用于在 RAG 检索阶段解析网页或研报中的数据图表。建议使用 qwen-vl-max 或 gpt-4o 等多模态模型。" 
+                  />
+                  <input type="text" placeholder="qwen-vl-max" value={settings.model_vision || ''} onChange={e => handleChange('model_vision', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-cyan-500/50 outline-none transition-all" />
+                  <details className="mt-3 group">
+                    <summary className="text-xs text-slate-500 dark:text-cyan-600 cursor-pointer hover:text-blue-500 dark:hover:text-cyan-400 select-none">独立 API 配置 (可选)</summary>
+                    <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-100 dark:border-cyan-900/30">
+                      <input type="password" placeholder="独立 API Key (留空则使用全局)" value={settings.vision_api_key || ''} onChange={e => handleChange('vision_api_key', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                      <input type="text" placeholder="独立 Base URL (留空则使用全局)" value={settings.vision_base_url || ''} onChange={e => handleChange('vision_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                    </div>
+                  </details>
                 </div>
               </div>
             </div>

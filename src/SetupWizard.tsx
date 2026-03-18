@@ -27,6 +27,19 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
     llm_base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     model_planner: 'qwen-max',
     model_writer: 'qwen-plus',
+    model_critic: 'qwen-turbo',
+    model_embedding: 'text-embedding-v3',
+    model_vision: 'qwen-vl-max',
+    planner_api_key: '',
+    planner_base_url: '',
+    writer_api_key: '',
+    writer_base_url: '',
+    critic_api_key: '',
+    critic_base_url: '',
+    embedding_api_key: '',
+    embedding_base_url: '',
+    vision_api_key: '',
+    vision_base_url: '',
     bocha_api_key: '',
     tg_bot_token: '',
     tg_chat_id: '',
@@ -266,7 +279,7 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
+                  <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl p-4">
                     <TooltipLabel 
                       label="规划师模型" 
                       title="大纲生成模型" 
@@ -277,10 +290,17 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                       value={settings.model_planner} 
                       onChange={e => handleChange('model_planner', e.target.value)} 
                       onFocus={() => setIsPasswordFocused(false)}
-                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
                     />
+                    <details className="mt-3 group">
+                      <summary className="text-xs text-slate-500 dark:text-cyan-600 cursor-pointer hover:text-blue-500 dark:hover:text-cyan-400 select-none">独立 API 配置 (可选)</summary>
+                      <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-100 dark:border-cyan-900/30">
+                        <input type="password" placeholder="独立 API Key (留空则使用全局)" value={settings.planner_api_key || ''} onChange={e => handleChange('planner_api_key', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                        <input type="text" placeholder="独立 Base URL (留空则使用全局)" value={settings.planner_base_url || ''} onChange={e => handleChange('planner_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                      </div>
+                    </details>
                   </div>
-                  <div>
+                  <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl p-4">
                     <TooltipLabel 
                       label="撰稿人模型" 
                       title="正文撰写模型" 
@@ -291,8 +311,78 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
                       value={settings.model_writer} 
                       onChange={e => handleChange('model_writer', e.target.value)} 
                       onFocus={() => setIsPasswordFocused(false)}
-                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-xl px-4 py-3 text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
                     />
+                    <details className="mt-3 group">
+                      <summary className="text-xs text-slate-500 dark:text-cyan-600 cursor-pointer hover:text-blue-500 dark:hover:text-cyan-400 select-none">独立 API 配置 (可选)</summary>
+                      <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-100 dark:border-cyan-900/30">
+                        <input type="password" placeholder="独立 API Key (留空则使用全局)" value={settings.writer_api_key || ''} onChange={e => handleChange('writer_api_key', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                        <input type="text" placeholder="独立 Base URL (留空则使用全局)" value={settings.writer_base_url || ''} onChange={e => handleChange('writer_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                      </div>
+                    </details>
+                  </div>
+                  <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl p-4">
+                    <TooltipLabel 
+                      label="审稿人模型" 
+                      title="事实核查与审查模型" 
+                      desc="负责深度核查 Writer 生成的内容是否包含幻觉，数据是否有出处。由于需要处理大量 RAG 上下文，建议使用推理能力强的模型，如 qwen-max。" 
+                    />
+                    <input 
+                      type="text" 
+                      value={settings.model_critic} 
+                      onChange={e => handleChange('model_critic', e.target.value)} 
+                      onFocus={() => setIsPasswordFocused(false)}
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                    />
+                    <details className="mt-3 group">
+                      <summary className="text-xs text-slate-500 dark:text-cyan-600 cursor-pointer hover:text-blue-500 dark:hover:text-cyan-400 select-none">独立 API 配置 (可选)</summary>
+                      <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-100 dark:border-cyan-900/30">
+                        <input type="password" placeholder="独立 API Key (留空则使用全局)" value={settings.critic_api_key || ''} onChange={e => handleChange('critic_api_key', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                        <input type="text" placeholder="独立 Base URL (留空则使用全局)" value={settings.critic_base_url || ''} onChange={e => handleChange('critic_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                      </div>
+                    </details>
+                  </div>
+                  <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl p-4">
+                    <TooltipLabel 
+                      label="向量模型" 
+                      title="RAG 知识库检索模型" 
+                      desc="用于将参考资料向量化，以便 Writer 实时检索。建议使用 text-embedding-v3 等支持高维向量的模型。" 
+                    />
+                    <input 
+                      type="text" 
+                      value={settings.model_embedding} 
+                      onChange={e => handleChange('model_embedding', e.target.value)} 
+                      onFocus={() => setIsPasswordFocused(false)}
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                    />
+                    <details className="mt-3 group">
+                      <summary className="text-xs text-slate-500 dark:text-cyan-600 cursor-pointer hover:text-blue-500 dark:hover:text-cyan-400 select-none">独立 API 配置 (可选)</summary>
+                      <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-100 dark:border-cyan-900/30">
+                        <input type="password" placeholder="独立 API Key (留空则使用全局)" value={settings.embedding_api_key || ''} onChange={e => handleChange('embedding_api_key', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                        <input type="text" placeholder="独立 Base URL (留空则使用全局)" value={settings.embedding_base_url || ''} onChange={e => handleChange('embedding_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                      </div>
+                    </details>
+                  </div>
+                  <div className="bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-cyan-900/50 rounded-xl p-4">
+                    <TooltipLabel 
+                      label="视觉模型" 
+                      title="多模态图表解析模型" 
+                      desc="用于在 RAG 检索阶段解析网页或研报中的数据图表。建议使用 qwen-vl-max 或 gpt-4o 等多模态模型。" 
+                    />
+                    <input 
+                      type="text" 
+                      value={settings.model_vision} 
+                      onChange={e => handleChange('model_vision', e.target.value)} 
+                      onFocus={() => setIsPasswordFocused(false)}
+                      className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500 outline-none" 
+                    />
+                    <details className="mt-3 group">
+                      <summary className="text-xs text-slate-500 dark:text-cyan-600 cursor-pointer hover:text-blue-500 dark:hover:text-cyan-400 select-none">独立 API 配置 (可选)</summary>
+                      <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-100 dark:border-cyan-900/30">
+                        <input type="password" placeholder="独立 API Key (留空则使用全局)" value={settings.vision_api_key || ''} onChange={e => handleChange('vision_api_key', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                        <input type="text" placeholder="独立 Base URL (留空则使用全局)" value={settings.vision_base_url || ''} onChange={e => handleChange('vision_base_url', e.target.value)} className="w-full bg-slate-50 dark:bg-[#030712] border border-slate-200 dark:border-cyan-900/50 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-cyan-100 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all" />
+                      </div>
+                    </details>
                   </div>
                 </div>
                 <div>
