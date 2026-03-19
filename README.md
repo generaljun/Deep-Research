@@ -25,34 +25,34 @@ DeepResearch-NAS 采用高度解耦的多智能体 (Multi-Agent) 架构，以下
 
 ```mermaid
 graph TD
-    User([👤 用户输入课题]) --> UI[🖥️ Web 交互界面]
-    UI -->|提交任务| API[⚙️ 后端 API 调度器]
+    User(["👤 用户输入课题"]) --> UI["🖥️ Web 交互界面"]
+    UI -->|"提交任务"| API["⚙️ 后端 API 调度器"]
     
-    subgraph 🧠 智能体协作网络 (Multi-Agent Workflow)
-        API -->|1. 规划| Planner[🧭 Planner 规划师]
-        Planner -->|生成 JSON 大纲| Loop((🔄 章节循环引擎))
+    subgraph Agents ["🧠 智能体协作网络 (Multi-Agent Workflow)"]
+        API -->|"1. 规划"| Planner["🧭 Planner 规划师"]
+        Planner -->|"生成 JSON 大纲"| Loop(("🔄 章节循环引擎"))
         
-        Loop -->|2. 检索当前章| Researcher[🕵️ Researcher 检索员]
-        Researcher -->|Bocha API| Web[(🌐 互联网网页)]
-        Web -->|Jina Reader 提取| RAG[🗃️ 向量化与 RAG 检索]
+        Loop -->|"2. 检索当前章"| Researcher["🕵️ Researcher 检索员"]
+        Researcher -->|"Bocha API"| Web[("🌐 互联网网页")]
+        Web -->|"Jina Reader 提取"| RAG["🗃️ 向量化与 RAG 检索"]
         
-        RAG -->|Top-K 文本切片| Writer[✍️ Writer 撰稿人]
-        RAG -->|图表图片| Vision[👁️ Vision 视觉解析]
-        Vision -->|Markdown 表格| Writer
+        RAG -->|"Top-K 文本切片"| Writer["✍️ Writer 撰稿人"]
+        RAG -->|"图表图片"| Vision["👁️ Vision 视觉解析"]
+        Vision -->|"Markdown 表格"| Writer
         
-        Writer -->|生成初稿| Critic[🧐 Critic 审稿人]
-        Critic -->|打回修改| Writer
-        Critic -->|审核通过| Extractor[🧠 记忆提取器]
+        Writer -->|"生成初稿"| Critic["🧐 Critic 审稿人"]
+        Critic -->|"打回修改"| Writer
+        Critic -->|"审核通过"| Extractor["🧠 记忆提取器"]
         
-        Extractor -->|提取 150 字摘要| Loop
+        Extractor -->|"提取 150 字摘要"| Loop
     end
     
-    Loop -->|所有章节完成| Compiler[📦 Compiler 整合排版]
-    Compiler -->|流式落盘| Disk[(💾 NAS 本地硬盘)]
-    Compiler -->|同步| Feishu[📝 飞书文档]
-    Compiler -->|通知| TG[📱 Telegram 机器人]
+    Loop -->|"所有章节完成"| Compiler["📦 Compiler 整合排版"]
+    Compiler -->|"流式落盘"| Disk[("💾 NAS 本地硬盘")]
+    Compiler -->|"同步"| Feishu["📝 飞书文档"]
+    Compiler -->|"通知"| TG["📱 Telegram 机器人"]
     
-    API -.->|SSE 实时推送进度| UI
+    API -.->|"SSE 实时推送进度"| UI
 ```
 
 ---
