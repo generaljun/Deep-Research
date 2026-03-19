@@ -182,6 +182,7 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 
     for (let i = 0; i < outline.chapters.length; i++) {
       const chapter = outline.chapters[i];
+      const cleanTitle = chapter.chapter_title.trim().replace(/^(第\s*[\d一二三四五六七八九十百]+\s*章[：:\s]*)+/, '').trim();
       runningTask.progress = 10 + Math.floor((i / outline.chapters.length) * 80);
       broadcastLog(taskId, `🔍 开始处理：${chapter.chapter_title}`);
       
@@ -196,9 +197,9 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
           broadcastLog(taskId, `🕵️ 正在调用研究员智能体 (Research Agent) 评估素材饱和度...`);
           const researchPrompt = `你是一位严谨的研究员。当前系统日期：${currentDateStr}。请评估以下检索到的参考素材是否足以支撑本章节的撰写。
 【课题名称】：${topic}
-【章节标题】：${chapter.chapter_title}
+【章节标题】：${cleanTitle}
 【核心论点】：${chapter.core_points}
-
+    
 【当前检索到的素材】：
 ${searchResults}
 
@@ -271,7 +272,7 @@ ${searchResults}
 ${contextPrompt}
 【学术规范与行文要求】
 1. 严禁偏离主题：本章正文必须严格围绕【课题名称】、【章节标题】和【核心论点】展开，严禁插入任何与本课题无关的内容（如AI大模型、固态储氢、碳排放等，除非课题本身相关）。
-2. 章节编号：本章是报告的第 ${i + 1} 章。请务必使用 Markdown 二级标题（##）作为本章的主标题，例如：“## 第 ${i + 1} 章：${chapter.chapter_title}”。本章内的所有子标题请使用三级（###）或四级（####）标题。
+2. 章节编号：本章是报告的第 ${i + 1} 章。请务必使用 Markdown 二级标题（##）作为本章的主标题，例如：“## 第 ${i + 1} 章：${cleanTitle}”。本章内的所有子标题请使用三级（###）或四级（####）标题。
 3. 深度剖析：严禁简单的信息堆砌。你必须对搜集到的信息进行“链条式整合”，分析不同现象之间的因果关系、行业底层逻辑以及未来的演进趋势。
 4. 行业洞察：融入你作为资深专家的行业思考，对技术瓶颈、市场博弈、政策导向进行深度推演。
 5. 可视化图表：请务必在正文中包含至少一个高质量的 Markdown 可视化数据表格。**严禁使用 Mermaid 语法**。在表格前必须提供一个描述性的标题（使用标准的 Markdown 三级或四级标题，例如：### 2025年市场规模对比），以便系统自动生成图表标题。请根据数据类型提供不同结构的表格，例如：时间序列数据（年份/月份/季度作为第一列）、占比数据（单列数值，分类少于8个）、多维对比数据等，以便系统自动渲染为折线图、饼图或柱状图。注意：标题标记（#）不要重复，例如绝对不要写成“### ### 标题”或“#### ### 标题”。
@@ -302,7 +303,7 @@ ${contextPrompt}
 </suggested_new_sections>
 
 课题名称：${topic}
-章节标题：${chapter.chapter_title}
+章节标题：${cleanTitle}
 核心论点：${chapter.core_points}
 
 参考素材：
@@ -336,9 +337,41 @@ ${searchResults}`;
           finalContent = finalContent.replace(/^ {0,3}(#{1,6})([^#\s])/gm, '$1 $2');
           // 修复被加粗的标题标记，如 "**### 标题**"
           finalContent = finalContent.replace(/^ {0,3}\*\*(#{1,6})\s+(.*?)\*\*/gm, '$1 **$2**');
-          if (!finalContent.includes(chapter.chapter_title)) {
-            finalContent = `## 第 ${i + 1} 章：${chapter.chapter_title}\n\n${finalContent}`;
+          
+          // 移除 LLM 生成内容开头可能存在的旧标题（以防止我们后续添加标准标题时重复）
+          // 匹配前 10 行内的标题
+          const lines = finalContent.split('\n');
+          for (let j = 0; j < Math.min(10, lines.length); j++) {
+            const line = lines[j].trim();
+            if (line === '') continue; // 跳过空行
+            
+            const cleanLine = line.replace(/^[#\s*]+/, '').replace(/[*#\s：:]+$/, '');
+            const normalizedLine = cleanLine.replace(/\s+/g, '');
+            const normalizedTitle = cleanTitle.replace(/[*#\s：:]+$/, '').replace(/\s+/g, '');
+            
+            const hasChapterKeyword = /^第[\d一二三四五六七八九十百千万]+章/.test(normalizedLine);
+            const isExactMatch = normalizedLine === normalizedTitle || normalizedLine === `第${i+1}章${normalizedTitle}` || normalizedLine === `第${i+1}章:${normalizedTitle}` || normalizedLine === `第${i+1}章：${normalizedTitle}`;
+            const isSentence = /[。.\!！\?？]$/.test(cleanLine);
+            
+            const titleWithoutChapter = normalizedLine.replace(/^(第[\d一二三四五六七八九十百千万]+章[：:]*)+/, '');
+            const containsTitle = normalizedLine.includes(normalizedTitle) || (titleWithoutChapter.length > 3 && normalizedTitle.includes(titleWithoutChapter));
+            const isShortChapterTitle = hasChapterKeyword && normalizedLine.length < 15;
+            
+            if (isExactMatch || (!isSentence && hasChapterKeyword && (isShortChapterTitle || containsTitle))) {
+              lines.splice(j, 1);
+              j--; // 调整索引
+            } else if (/^#{1,4}\s+/.test(line)) {
+              // 遇到其他正常的子标题（如 ### 2.1 市场概况），停止移除
+              break;
+            } else {
+              // 遇到正文内容，停止移除
+              break;
+            }
           }
+          finalContent = lines.join('\n').trim();
+          
+          // 统一在最前面加上标准标题
+          finalContent = `## 第 ${i + 1} 章：${cleanTitle}\n\n${finalContent}`;
 
           // 调用审稿人
           broadcastLog(taskId, `🧐 正在调用审稿人 (${modelCritic}) 进行审查 (第 ${retryCount + 1} 次尝试)...`);
@@ -351,9 +384,9 @@ ${searchResults}`;
 4. 数据图表？（必须包含至少一个 Markdown 格式的数据表格，且表格数据必须来源于参考素材）
 
 【课题名称】：${topic}
-【章节标题】：${chapter.chapter_title}
+【章节标题】：${cleanTitle}
 【核心论点】：${chapter.core_points}
-
+    
 【参考素材】（证据链）：
 ${searchResults}
 
@@ -451,13 +484,13 @@ ${finalContent}
             `正在提取第 ${chapter.chapter_num} 章摘要`
           );
           previousChapterSummaries.push({
-            chapter: `第 ${i + 1} 章：${chapter.chapter_title}`,
+            chapter: `第 ${i + 1} 章：${cleanTitle}`,
             summary: summary.trim()
           });
         } catch (e: any) {
           logger.error(`Failed to generate summary for chapter ${i + 1}: ${e.message}`);
           previousChapterSummaries.push({
-            chapter: `第 ${i + 1} 章：${chapter.chapter_title}`,
+            chapter: `第 ${i + 1} 章：${cleanTitle}`,
             summary: chapter.core_points
           });
         }
@@ -476,7 +509,7 @@ ${finalContent}
       } catch (e: any) {
         const errCode = e.response?.status || e.code || 'UNKNOWN';
         broadcastLog(taskId, `❌ [撰写模块] 本章撰写失败。错误代码: ${errCode}, 原因: ${e.message}。已写入降级占位符。`, 'error');
-        fs.appendFileSync(filePath, `## ${chapter.chapter_title}\n\n>[系统提示：本章节生成超时或API无响应，为防止工作流中断已跳过，请人工补充]\n\n`);
+        fs.appendFileSync(filePath, `## 第 ${i + 1} 章：${cleanTitle}\n\n>[系统提示：本章节生成超时或API无响应，为防止工作流中断已跳过，请人工补充]\n\n`);
       }
 
       if (i < outline.chapters.length - 1) {
