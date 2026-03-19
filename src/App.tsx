@@ -388,7 +388,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
       const response = await fetch(`/api/reports/${id}/download`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) {
         onLogout();
         return;
       }
@@ -413,7 +413,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
       const response = await fetch(`/api/reports/${id}/md`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) {
         onLogout();
         return;
       }
@@ -439,7 +439,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) {
         onLogout();
         return;
       }
@@ -458,7 +458,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(res => {
-        if (res.status === 401 || res.status === 403) {
+        if (res.status === 401) {
           onLogout();
           return [];
         }
@@ -645,7 +645,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
     if (!token) return;
     fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => {
-        if (res.status === 401 || res.status === 403) {
+        if (res.status === 401) {
           onLogout();
           return null;
         }
@@ -747,7 +747,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
       });
       
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
+        if (res.status === 401) {
           onLogout();
           throw new Error('登录已过期，请重新登录');
         }
@@ -778,7 +778,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
       });
       
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
+        if (res.status === 401) {
           onLogout();
           throw new Error('登录已过期，请重新登录');
         }
@@ -820,7 +820,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
       });
       
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
+        if (res.status === 401) {
           onLogout();
           throw new Error('登录已过期，请重新登录');
         }
@@ -1435,7 +1435,7 @@ function AdminView({ token, settings, handleChange, setSettings, onLogout, isAct
     if (!isActive) return;
     fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => {
-        if (res.status === 401 || res.status === 403) {
+        if (res.status === 401) {
           onLogout();
           return {};
         }
@@ -1452,7 +1452,7 @@ function AdminView({ token, settings, handleChange, setSettings, onLogout, isAct
     setCheckingUpdate(true);
     try {
       const res = await fetch('/api/system/check-update', { headers: { 'Authorization': `Bearer ${token}` } });
-      if (res.status === 401 || res.status === 403) {
+      if (res.status === 401) {
         onLogout();
         return;
       }
@@ -1518,7 +1518,7 @@ function AdminView({ token, settings, handleChange, setSettings, onLogout, isAct
   const fetchUsers = () => {
     fetch('/api/users', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => {
-        if (res.status === 401 || res.status === 403) {
+        if (res.status === 401) {
           onLogout();
           return [];
         }
@@ -1530,7 +1530,7 @@ function AdminView({ token, settings, handleChange, setSettings, onLogout, isAct
   const fetchLogs = () => {
     fetch('/api/logs', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => {
-        if (res.status === 401 || res.status === 403) {
+        if (res.status === 401) {
           onLogout();
           return [];
         }

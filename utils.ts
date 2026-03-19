@@ -264,7 +264,7 @@ export const authenticateToken = (req: any, res: any, next: any) => {
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
   jwt.verify(token, jwtSecret, (err: any, user: any) => {
-    if (err) return res.status(403).json({ error: 'Forbidden' });
+    if (err) return res.status(401).json({ error: 'Token expired or invalid' });
     req.user = user;
     next();
   });

@@ -28,7 +28,7 @@ graph TD
     User(["👤 用户输入课题"]) --> UI["🖥️ Web 交互界面"]
     UI -->|"提交任务"| API["⚙️ 后端 API 调度器"]
     
-    subgraph Agents ["🧠 智能体协作网络 (Multi-Agent Workflow)"]
+    subgraph Agents [智能体协作网络 Multi-Agent Workflow]
         API -->|"1. 规划"| Planner["🧭 Planner 规划师"]
         Planner -->|"生成 JSON 大纲"| Loop(("🔄 章节循环引擎"))
         

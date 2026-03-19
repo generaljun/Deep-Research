@@ -1067,7 +1067,7 @@ app.post('/api/research', authenticateToken, (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const userData = db.prepare('SELECT quota, daily_limit, total_quota, used_quota, daily_used, last_reset_date FROM users WHERE username = ?').get(user) as any;
     
-    if (userData) {
+    if (userData && (req as any).user.role !== 'admin') {
       if (userData.last_reset_date !== today) {
         userData.daily_used = 0;
         db.prepare('UPDATE users SET daily_used = 0, last_reset_date = ? WHERE username = ?').run(today, user);

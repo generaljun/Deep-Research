@@ -7,7 +7,7 @@ import { logger, getSetting, withRetry, getLLMClient, getProxyAgent, streamLLMWi
 // RAG & Vector Store Helpers
 // ==========================================
 
-interface DocumentChunk {
+export interface DocumentChunk {
   text: string;
   url: string;
   title: string;
