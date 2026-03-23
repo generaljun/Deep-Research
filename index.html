@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>基于docker的深度报告生成助手</title>
+    <script>
+      // Dummy function to prevent "func sseError not found" errors
+      // which might be coming from reverse proxies or injected scripts
+      window.sseError = function(err) {
+        console.error('SSE Error caught by global handler:', err);
+      };
+    </script>
   </head>
   <body>
     <div id="root"></div>

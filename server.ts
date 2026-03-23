@@ -42,14 +42,17 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 const app = express();
-app.set('trust proxy', 1); // Trust the first proxy (NAS reverse proxy)
+app.set('trust proxy', true); // Trust all proxies in NAS/Proxy environments
 const PORT = Number(process.env.PORT) || 3000;
 
 app.use(cors({
-  origin: true,
+  origin: (origin, callback) => {
+    // Allow all origins, especially useful for NAS with dynamic IPs/domains
+    callback(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
 app.use(express.json());
 
@@ -1502,6 +1505,17 @@ app.get('/api/system-status/stream', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable buffering for Nginx/Lucky
+  
+  // Explicitly set CORS for SSE as some browsers/proxies are strict with EventSource
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
   res.flushHeaders();
 
   const onStatus = (data: string) => res.write(`data: ${data}\n\n`);
@@ -1532,6 +1546,17 @@ app.get('/api/research/:id/stream', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable buffering for Nginx/Lucky
+  
+  // Explicitly set CORS for SSE as some browsers/proxies are strict with EventSource
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
   res.flushHeaders();
 
   const onLog = (data: string) => res.write(`data: ${data}\n\n`);
