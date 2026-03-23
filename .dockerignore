@@ -1,7 +1,8 @@
 node_modules
 dist
+data
+reports
+logs
 .git
 .env
-*.log
-data/database.sqlite
-reports/*.md
+*.sqlite

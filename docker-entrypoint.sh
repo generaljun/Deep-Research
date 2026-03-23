@@ -22,7 +22,7 @@ if [ "$PUID" -ne 0 ]; then
     else
         GROUP_NAME="fnos"
         echo "➕ 创建新组: $GROUP_NAME (GID: $PGID)"
-        addgroup -g "$PGID" "$GROUP_NAME"
+        groupadd -g "$PGID" "$GROUP_NAME"
     fi
     
     # 2. 处理用户 (User)
@@ -34,14 +34,14 @@ if [ "$PUID" -ne 0 ]; then
     else
         USER_NAME="fnos"
         echo "➕ 创建新用户: $USER_NAME (UID: $PUID)"
-        adduser -D -u "$PUID" -G "$GROUP_NAME" -s /bin/sh "$USER_NAME"
+        useradd -u "$PUID" -g "$GROUP_NAME" -s /bin/sh -m "$USER_NAME"
     fi
 
     echo "📂 正在同步文件夹所有权 (chown)..."
     chown -R "$PUID:$PGID" /app/data /app/reports /app/logs
     
     echo "✅ 权限配置完成，切换用户 [$USER_NAME] 执行命令"
-    exec su-exec "$USER_NAME" "$@"
+    exec gosu "$USER_NAME" "$@"
 else
     echo "⚠️  提示: 正在以 Root 身份运行"
     echo "📂 正在确保文件夹可写..."

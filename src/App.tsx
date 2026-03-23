@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info, Trash2, Github, Eye, EyeOff, Plus, ArrowUp, ArrowDown, Upload, X } from 'lucide-react';
+import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info, Trash2, Github, Eye, EyeOff, Plus, ArrowUp, ArrowDown, Upload, X, Search } from 'lucide-react';
 import SetupWizard from './SetupWizard';
 import AnimationDemo from './AnimationDemo';
 import WebGLShader from './components/WebGLShader';
@@ -604,6 +604,7 @@ function ReportsView({ token, user, onLogout, isActive }: { token: string, user:
 function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { token: string, user: any, onLogout: () => void, isActive: boolean, setActiveTab: (tab: 'generator' | 'reports' | 'admin') => void }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [topic, setTopic] = useState('');
+  const [mode, setMode] = useState<'report' | 'collection'>('report');
   const [length, setLength] = useState('5000-8000');
   const [files, setFiles] = useState<File[]>([]);
   const [filePaths, setFilePaths] = useState<string[]>([]);
@@ -716,23 +717,35 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
   const handleStartChat = () => {
     if (!topic.trim()) return;
     
-    let levelDescription = "";
-    let questionFocus = "";
-    if (length.includes('3000')) {
-      levelDescription = "【精简速览级】（侧重广度优先、快速洞察与核心信息汇总）";
-      questionFocus = "重点询问：希望覆盖的核心领域、最关心的宏观数据/趋势、以及目标受众（如高管快速了解）。";
-    } else if (length.includes('5000')) {
-      levelDescription = "【深度研报级】（侧重垂直挖掘、多维交叉验证与方向收窄）";
-      questionFocus = "重点询问：需要深挖的具体细分赛道/技术节点、希望对比的标杆企业、以及需要剖析的行业痛点。";
-    } else {
-      levelDescription = "【专业研报级】（侧重行业前沿、深度战略思考与专业建议反馈）";
-      questionFocus = "重点询问：报告的战略意图（如投资决策、业务转型）、需要推演的未来前沿趋势、以及期望获得的具体战略建议方向。";
-    }
+    let initialMsg = "";
+    if (mode === 'collection') {
+      initialMsg = `我想进行关于【${topic}】的行业信息收集与情报整理。
+请作为专业的情报分析师，通过3轮对话帮我明确：
+1. 核心搜索维度（如：市场规模、竞争对手动态、技术专利、政策风险、价格变动等）。
+2. 重点关注的时间范围（如：近1年、近3年）。
+3. 是否有特定的竞争对手、对标产品或细分赛道需要重点关注。
 
-    const initialMsg = `我想写一份关于【${topic}】的研究报告，定位为${levelDescription}，字数预期在 ${length} 字。
+⚠️ 任务目标：广泛搜集资料并整理，注明出处，核验幻觉，梳理清晰。
+请直接向我提出第一轮的3个核心问题，然后停止输出，等待我的回答。`;
+    } else {
+      let levelDescription = "";
+      let questionFocus = "";
+      if (length.includes('3000')) {
+        levelDescription = "【精简速览级】（侧重广度优先、快速洞察与核心信息汇总）";
+        questionFocus = "重点询问：希望覆盖的核心领域、最关心的宏观数据/趋势、以及目标受众（如高管快速了解）。";
+      } else if (length.includes('5000')) {
+        levelDescription = "【深度研报级】（侧重垂直挖掘、多维交叉验证与方向收窄）";
+        questionFocus = "重点询问：需要深挖的具体细分赛道/技术节点、希望对比的标杆企业、以及需要剖析的行业痛点。";
+      } else {
+        levelDescription = "【专业研报级】（侧重行业前沿、深度战略思考与专业建议反馈）";
+        questionFocus = "重点询问：报告的战略意图（如投资决策、业务转型）、需要推演的未来前沿趋势、以及期望获得的具体战略建议方向。";
+      }
+
+      initialMsg = `我想写一份关于【${topic}】的研究报告，定位为${levelDescription}，字数预期在 ${length} 字。
 请作为专业的行业分析师，通过4-5轮的追问，帮我明确研究的边界和特殊要求，最后在最后一轮直接输出结构化大纲。
 ⚠️ 提问方向指引：${questionFocus}
 ⚠️ 严格指令：请不要自己模拟多轮对话！现在，请结合上述定位，直接向我提出第一轮的3-5个核心问题，然后停止输出，等待我的回答。`;
+    }
     
     setMessages([{ role: 'user', content: initialMsg }]);
     setStep(2);
@@ -890,7 +903,12 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ topic: outline?.report_title || topic, length, outline, filePaths }),
+        body: JSON.stringify({ 
+          topic: outline?.report_title || topic, 
+          length: mode === 'collection' ? 'collection' : length, 
+          outline, 
+          filePaths 
+        }),
       });
       
       if (!res.ok) {
@@ -1010,41 +1028,79 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
 
                 <div className="space-y-3">
                   <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-cyan-300">
-                    <Layers className="w-4 h-4" />
-                    预期报告深度 (Depth & Length)
+                    <Zap className="w-4 h-4" />
+                    任务模式 (Task Mode)
                   </label>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {[
-                      { len: '3000-5000', label: '精简速览级', desc: '广度优先，快速洞察与核心信息汇总' },
-                      { len: '5000-8000', label: '深度研报级', desc: '垂直挖掘，多维交叉验证与方向收窄' },
-                      { len: '8000-12000', label: '专业研报级', desc: '行业前沿，深度战略思考与专业建议反馈' }
-                    ].map(({ len, label, desc }) => (
+                      { id: 'report', label: '深度研究报告', icon: <FileText className="w-4 h-4" />, desc: '结构化撰写，深度分析与战略推演' },
+                      { id: 'collection', label: '行业信息收集', icon: <Search className="w-4 h-4" />, desc: '广泛搜集资料，注明出处，情报整理' }
+                    ].map(({ id, label, icon, desc }) => (
                       <button
-                        key={len}
-                        onClick={() => setLength(len)}
+                        key={id}
+                        onClick={() => setMode(id as any)}
                         disabled={systemStatus.isBusy}
-                        className={`relative overflow-hidden p-5 rounded-2xl border text-left transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
-                          length === len
-                            ? 'bg-blue-50/40 dark:bg-cyan-950/40 border-blue-500 dark:border-cyan-500 shadow-md dark:shadow-[0_0_20px_rgba(6,182,212,0.15)]'
-                            : 'bg-slate-50 dark:bg-[#030712] border-slate-100 dark:border-cyan-900/30 hover:border-blue-300 dark:hover:border-cyan-700/50 hover:bg-blue-50/20 dark:bg-cyan-950/20'
+                        className={`relative overflow-hidden p-4 rounded-2xl border text-left transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          mode === id
+                            ? 'bg-blue-50/40 dark:bg-cyan-950/40 border-blue-500 dark:border-cyan-500 shadow-md'
+                            : 'bg-slate-50 dark:bg-[#030712] border-slate-100 dark:border-cyan-900/30 hover:border-blue-300 dark:hover:border-cyan-700/50'
                         }`}
                       >
-                        {length === len && (
-                          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-cyan-500/20 to-transparent rounded-bl-full"></div>
-                        )}
-                        <div className={`font-bold text-lg mb-1 ${length === len ? 'text-slate-600 dark:text-cyan-300' : 'text-slate-700 dark:text-cyan-100'}`}>
-                          {label}
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className={`${mode === id ? 'text-blue-500 dark:text-cyan-400' : 'text-slate-400 dark:text-cyan-600'}`}>
+                            {icon}
+                          </div>
+                          <div className={`font-bold ${mode === id ? 'text-slate-600 dark:text-cyan-300' : 'text-slate-700 dark:text-cyan-100'}`}>
+                            {label}
+                          </div>
                         </div>
-                        <div className={`text-xs font-mono mb-3 ${length === len ? 'text-blue-500 dark:text-cyan-400' : 'text-blue-600 dark:text-cyan-600'}`}>
-                          {len} 字
-                        </div>
-                        <div className="text-xs text-blue-500 dark:text-slate-400 dark:text-cyan-400/50 leading-relaxed">
+                        <div className="text-[10px] text-blue-500 dark:text-slate-400 dark:text-cyan-400/50 leading-relaxed">
                           {desc}
                         </div>
                       </button>
                     ))}
                   </div>
                 </div>
+
+                {mode === 'report' && (
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-cyan-300">
+                      <Layers className="w-4 h-4" />
+                      预期报告深度 (Depth & Length)
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {[
+                        { len: '3000-5000', label: '精简速览级', desc: '广度优先，快速洞察与核心信息汇总' },
+                        { len: '5000-8000', label: '深度研报级', desc: '垂直挖掘，多维交叉验证与方向收窄' },
+                        { len: '8000-12000', label: '专业研报级', desc: '行业前沿，深度战略思考与专业建议反馈' }
+                      ].map(({ len, label, desc }) => (
+                        <button
+                          key={len}
+                          onClick={() => setLength(len)}
+                          disabled={systemStatus.isBusy}
+                          className={`relative overflow-hidden p-5 rounded-2xl border text-left transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
+                            length === len
+                              ? 'bg-blue-50/40 dark:bg-cyan-950/40 border-blue-500 dark:border-cyan-500 shadow-md dark:shadow-[0_0_20px_rgba(6,182,212,0.15)]'
+                              : 'bg-slate-50 dark:bg-[#030712] border-slate-100 dark:border-cyan-900/30 hover:border-blue-300 dark:hover:border-cyan-700/50 hover:bg-blue-50/20 dark:bg-cyan-950/20'
+                          }`}
+                        >
+                          {length === len && (
+                            <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-cyan-500/20 to-transparent rounded-bl-full"></div>
+                          )}
+                          <div className={`font-bold text-lg mb-1 ${length === len ? 'text-slate-600 dark:text-cyan-300' : 'text-slate-700 dark:text-cyan-100'}`}>
+                            {label}
+                          </div>
+                          <div className={`text-xs font-mono mb-3 ${length === len ? 'text-blue-500 dark:text-cyan-400' : 'text-blue-600 dark:text-cyan-600'}`}>
+                            {len} 字
+                          </div>
+                          <div className="text-xs text-blue-500 dark:text-slate-400 dark:text-cyan-400/50 leading-relaxed">
+                            {desc}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-3">
                   <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-cyan-300">

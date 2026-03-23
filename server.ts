@@ -6,16 +6,16 @@ import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Database from 'better-sqlite3';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const Database = require('better-sqlite3');
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
 import { EventEmitter } from 'events';
-import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import { SocksProxyAgent } from 'socks-proxy-agent';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
-import multer from 'multer';
+import crypto from 'crypto';
 
 const execAsync = promisify(exec);
 
@@ -42,7 +42,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -61,6 +61,9 @@ let runningTask: { id: string, topic: string, user: string, progress: number, st
 let taskQueue: { id: string, topic: string, user: string, length?: string, outline?: any, filePaths?: string[] }[] = [];
 
 const getLevelPrompt = (length: string) => {
+  if (length === 'collection') {
+    return "【任务定位：行业信息收集与情报整理】\n本任务侧重于“广泛搜集”和“结构化整理”。请作为专业的情报分析师，不限于撰写分析结论，更重要的是将搜集到的核心事实、数据、政策、竞争对手动态等进行全景式罗列。必须严格注明资料出处，并对信息进行分类梳理。";
+  }
   if (length.includes('3000')) {
     return "【报告定位：精简速览级】\n本报告侧重于“广度优先”和“信息汇总”。请提供全景式的行业扫描，快速提取核心数据和关键洞察，无需过度深挖单一技术细节，重点在于帮助读者快速建立全局认知。";
   } else if (length.includes('5000')) {
@@ -71,6 +74,9 @@ const getLevelPrompt = (length: string) => {
 };
 
 const getCriticLevelPrompt = (length: string) => {
+  if (length === 'collection') {
+    return `6. 级别适配度（行业信息收集）：资料是否详尽？是否覆盖了用户要求的所有维度？是否每一条核心信息都注明了出处？如果发现信息来源单一或缺乏出处标注，请打回并要求补充。`;
+  }
   if (length.includes('3000')) {
     return `6. 级别适配度（精简速览级）：草稿是否做到了“广度优先”和“高度概括”？如果发现草稿过度深挖单一技术细节而忽略了全局视野，或者缺乏核心信息的提炼，请扣分并要求精简提炼。`;
   } else if (length.includes('5000')) {
@@ -130,7 +136,30 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
       broadcastLog(taskId, `🧠 正在调用规划师 (${modelPlanner}) 生成大纲...`);
       
       const levelPrompt = getLevelPrompt(length);
-      const plannerPrompt = `你是一个只输出 JSON 的数据转换接口。
+      const plannerPrompt = length === 'collection' ? 
+      `你是一个只输出 JSON 的数据转换接口。
+当前系统日期：${currentDateStr}。
+请根据用户探讨的课题：【${topic}】，生成一份“行业信息收集与情报整理”大纲。
+预期篇幅：广泛搜集，不设严格字数上限，但需确保信息密度。
+${levelPrompt}
+
+【致命约束】
+1. 严禁偏离主题。所有章节必须紧扣课题：【${topic}】。
+2. 章节设计应侧重于“事实罗列”和“情报分类”（如：行业概况、政策环境、市场竞争、技术动态、重点企业、风险预警等）。
+3. 绝对禁止输出任何 Markdown 标记（如 \`\`\`json\`）、禁止输出任何问候语或解释。
+4. 必须严格遵守以下 JSON 结构：
+{
+  "report_title": "情报整理：${topic}",
+  "executive_summary_points": "本次情报搜集的整体背景与核心价值点总结",
+  "chapters": [
+    {
+      "chapter_num": 1,
+      "chapter_title": "第一章：...",
+      "core_points": "本章需要搜集的核心情报维度，请确保涵盖广泛的信息点。"
+    }
+  ]
+}` : 
+      `你是一个只输出 JSON 的数据转换接口。
 当前系统日期：${currentDateStr}。请基于此真实时间背景，对未来趋势进行前瞻性预测，并在提及“近几年”时以此日期为基准。
 请根据用户探讨的课题：【${topic}】，生成一份深度研究报告大纲。
 预期【正文】篇幅：${length}字（不含执行摘要、参考文献）。
@@ -209,7 +238,16 @@ ${levelPrompt}
       // 生成执行摘要
       try {
         broadcastLog(taskId, `📝 正在撰写执行摘要 (Executive Summary)...`);
-        const summaryPrompt = `你是一位顶级的战略咨询顾问。当前系统日期：${currentDateStr}。请根据报告标题【${outline.report_title}】和以下核心要点，撰写一份极具洞察力的“执行摘要（Executive Summary）”。
+        const summaryPrompt = length === 'collection' ?
+        `你是一位专业的情报分析师。当前系统日期：${currentDateStr}。请根据情报标题【${outline.report_title}】和以下核心要点，撰写一份“情报搜集综述”。
+        
+核心要点：${outline.executive_summary_points}
+
+要求：
+1. 总结本次情报搜集的覆盖范围。
+2. 提炼出最具价值的 3-5 条核心情报。
+3. 篇幅约 400-600 字，直接输出正文，不要任何开场白。` :
+        `你是一位顶级的战略咨询顾问。当前系统日期：${currentDateStr}。请根据报告标题【${outline.report_title}】和以下核心要点，撰写一份极具洞察力的“执行摘要（Executive Summary）”。
         
 核心要点：${outline.executive_summary_points}
 
@@ -337,7 +375,9 @@ ${searchResults}
         } else {
           broadcastLog(taskId, `🌐 正在调用博查 API 检索素材...`);
           let query = `${topic} ${chapter.chapter_title} ${chapter.core_points}`;
-          if (length.includes('深度') || length.includes('专业') || length.includes('10000') || length.includes('20000')) {
+          if (length === 'collection') {
+            // 行业信息收集模式：不加限制，广泛搜索
+          } else if (length.includes('深度') || length.includes('专业') || length.includes('10000') || length.includes('20000')) {
             query += ' site:gov.cn OR site:edu.cn OR site:mckinsey.com';
           }
           searchResults = await withRetry(() => searchBocha(query, broadcastLog, taskId));
@@ -361,7 +401,31 @@ ${searchResults}
         }
 
         const levelPrompt = getLevelPrompt(length);
-        const writerPrompt = `你是一位顶级的学术研究员与行业资深撰稿人。
+        const writerPrompt = length === 'collection' ?
+        `你是一位专业的情报分析师与资深撰稿人。
+当前系统日期：${currentDateStr}。请基于此真实时间背景，对搜集到的情报进行整理。
+请根据【课题名称】、【章节标题】以及提供的【参考素材】，撰写本章的情报整理内容。
+${levelPrompt}
+${contextPrompt}
+【情报整理规范与要求】
+1. 广泛罗列：尽可能详尽地罗列素材中提到的所有相关事实、数据、政策、竞争对手动态等。
+2. 结构化呈现：使用清晰的 Markdown 列表、小标题或表格来组织信息，使其易于快速查阅。
+3. 严格注明出处：每一条核心情报后面必须用方括号标注来源（如：[来源1]、[来源2]）。
+4. 核验幻觉：严禁捏造素材中不存在的信息。如果素材中没有相关信息，请直接说明“未搜集到相关详细信息”。
+5. 数据表格：如果素材中有对比数据或时间序列数据，请务必将其整理成 Markdown 表格。
+6. 章节编号：本章是情报整理的第 ${i + 1} 章。请务必使用 Markdown 二级标题（##）作为本章的主标题，例如：“## 第 ${i + 1} 章：${cleanTitle}”。
+7. 参考文献列表：必须在本章正文的最后，设立“### 参考文献与数据源”小节，按顺序排列。
+   - 必须使用【参考素材】中提供的真实来源标题和 URL。
+   - 格式要求：[序号] [来源标题](URL)
+8. 严禁废话：直接输出正文，绝对不要输出任何开场白或结束语。
+
+课题名称：${topic}
+章节标题：${cleanTitle}
+核心情报维度：${chapter.core_points}
+
+参考素材：
+${searchResults}` :
+        `你是一位顶级的学术研究员与行业资深撰稿人。
 当前系统日期：${currentDateStr}。请基于此真实时间背景，对未来趋势进行前瞻性预测，并在提及“近几年”、“当前”时严格以此日期为基准。
 请根据【课题名称】、【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
 ${levelPrompt}
@@ -387,7 +451,7 @@ ${contextPrompt}
    [1] [2025年中国新能源产业发展报告](https://example.com/report2025)
    [2] [国家统计局：最新人口结构数据](https://example.com/data)
 10. 严禁废话：直接输出正文，绝对不要输出任何开场白或结束语。
-11. 上下文连贯：请参考【前文内容摘要】，在合适的段落（如开头或过渡段）自然地呼应前文，确保整份报告逻辑是一个整体，避免各章节割裂。
+11. 上下文连贯：请参考【前文内容摘要】，在合适的段落（如开头或过渡段）自然地互应前文，确保整份报告逻辑是一个整体，避免各章节割裂。
 12. 动态大纲申请（可选）：如果在撰写本章的过程中，你发现某个子课题极其重要且资料丰富，值得单独成为一个新的章节，你可以在正文的**最末尾**（参考文献之后）使用以下 XML 格式向系统申请追加新章节。如果没有必要，请不要输出此部分。
 <suggested_new_sections>
 [
@@ -472,7 +536,32 @@ ${searchResults}`;
           // 调用审稿人
           broadcastLog(taskId, `🧐 正在调用审稿人 (${modelCritic}) 进行审查 (第 ${retryCount + 1} 次尝试)...`);
           const criticLevelPrompt = getCriticLevelPrompt(length);
-          const criticPrompt = `你是一位严苛的报告审稿人与事实核查员（Fact-Checker）。当前系统日期：${currentDateStr}。请严格对比【作者草稿】与【参考素材】，对草稿进行深度审查。
+          const criticPrompt = length === 'collection' ?
+          `你是一位严谨的情报核查员。当前系统日期：${currentDateStr}。请严格对比【情报草稿】与【参考素材】，对情报进行核实。
+
+【审查标准】
+1. 事实核查（致命项）：草稿中提到的所有事实和数据是否都能在【参考素材】中找到对应？严禁幻觉。
+2. 出处标注：是否每一条核心情报都标注了来源？
+3. 覆盖度：是否充分利用了素材中的信息？
+4. 结构化：信息是否梳理清晰，易于阅读？
+${criticLevelPrompt}
+
+【课题名称】：${topic}
+【章节标题】：${cleanTitle}
+【核心情报维度】：${chapter.core_points}
+    
+【参考素材】（证据链）：
+${searchResults}
+
+【情报草稿】：
+${finalContent}
+
+请严格按照以下 JSON 格式输出审查结果（不要输出任何其他内容，必须是合法的 JSON）：
+{
+  "score": 85,
+  "feedback": "如果低于80分，请给出具体的修改意见；如果高于80分，可简短肯定。"
+}` :
+          `你是一位严苛的报告审稿人与事实核查员（Fact-Checker）。当前系统日期：${currentDateStr}。请严格对比【作者草稿】与【参考素材】，对草稿进行深度审查。
 
 【审查标准】
 1. 事实核查（致命项）：草稿中出现的任何具体数据（如金额、百分比、年份、专有名词），是否能在【参考素材】中找到明确出处？如果发现草稿捏造了素材中不存在的数据（幻觉），请立即打回（低于80分），并明确指出具体是哪一句话造假。

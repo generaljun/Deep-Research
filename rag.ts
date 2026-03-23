@@ -4,10 +4,11 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { logger, getSetting, withRetry, getLLMClient, getProxyAgent, streamLLMWithProgress } from './utils.js';
 import fs from 'fs';
-// @ts-ignore
-import pdfParse from 'pdf-parse';
-import mammoth from 'mammoth';
 import path from 'path';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
 
 // RAG & Vector Store Helpers
 // ==========================================

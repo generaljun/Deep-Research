@@ -5,10 +5,12 @@ import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Database from 'better-sqlite3';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const Database = require('better-sqlite3');
 import { EventEmitter } from 'events';
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
+const jwt = require('jsonwebtoken');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,7 +81,7 @@ setInterval(() => {
 // ==========================================
 // 2. Database Setup (SQLite)
 // ==========================================
-export let db: Database.Database;
+export let db: any;
 try {
   const dataDir = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data');
   if (!fs.existsSync(dataDir)) {
