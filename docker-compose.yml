@@ -5,7 +5,7 @@ services:
     container_name: deep-research-web
     restart: always
     ports:
-      - "6789:3000" # 宿主机端口:容器端口 (Lucky 反代 6789 -> 3000)
+      - "3000:3000" # 宿主机端口:容器端口 (Lucky 反代 6789 -> 3000)
     environment:
       - NODE_ENV=production
       - PORT=3000
