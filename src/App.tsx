@@ -708,7 +708,11 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
     });
 
     eventSource.onerror = (error) => {
-      console.error('SSE Error:', error);
+      console.error('SSE Connection Error:', error);
+      // If the connection is closed or fails, we might want to notify the user
+      if (eventSource.readyState === EventSource.CLOSED) {
+        console.log('SSE connection was closed.');
+      }
     };
 
     return () => eventSource.close();
