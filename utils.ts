@@ -164,6 +164,41 @@ try {
       db.exec("ALTER TABLE users ADD COLUMN last_reset_date TEXT");
       console.log("Migration: Added last_reset_date column to users table");
     }
+
+    const taskColumns = db.prepare("PRAGMA table_info(tasks)").all() as any[];
+    const taskColNames = taskColumns.map(c => c.name);
+    if (!taskColNames.includes('current_chapter_index')) {
+      db.exec("ALTER TABLE tasks ADD COLUMN current_chapter_index INTEGER DEFAULT 0");
+      console.log("Migration: Added current_chapter_index column to tasks table");
+    }
+    if (!taskColNames.includes('chapter_states')) {
+      db.exec("ALTER TABLE tasks ADD COLUMN chapter_states TEXT");
+      console.log("Migration: Added chapter_states column to tasks table");
+    }
+    if (!taskColNames.includes('outline')) {
+      db.exec("ALTER TABLE tasks ADD COLUMN outline TEXT");
+      console.log("Migration: Added outline column to tasks table");
+    }
+    if (!taskColNames.includes('length')) {
+      db.exec("ALTER TABLE tasks ADD COLUMN length TEXT");
+      console.log("Migration: Added length column to tasks table");
+    }
+    if (!taskColNames.includes('user')) {
+      db.exec("ALTER TABLE tasks ADD COLUMN user TEXT");
+      console.log("Migration: Added user column to tasks table");
+    }
+    if (!taskColNames.includes('feishu_doc_id')) {
+      db.exec("ALTER TABLE tasks ADD COLUMN feishu_doc_id TEXT");
+      console.log("Migration: Added feishu_doc_id column to tasks table");
+    }
+    if (!taskColNames.includes('file_path')) {
+      db.exec("ALTER TABLE tasks ADD COLUMN file_path TEXT");
+      console.log("Migration: Added file_path column to tasks table");
+    }
+    if (!taskColNames.includes('file_paths')) {
+      db.exec("ALTER TABLE tasks ADD COLUMN file_paths TEXT");
+      console.log("Migration: Added file_paths column to tasks table");
+    }
   } catch (e) {
     console.error("Migration error:", e);
   }

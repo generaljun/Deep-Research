@@ -3,6 +3,11 @@ import OpenAI from 'openai';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { logger, getSetting, withRetry, getLLMClient, getProxyAgent, streamLLMWithProgress } from './utils.js';
+import fs from 'fs';
+// @ts-ignore
+import pdfParse from 'pdf-parse';
+import mammoth from 'mammoth';
+import path from 'path';
 
 // RAG & Vector Store Helpers
 // ==========================================
@@ -146,13 +151,23 @@ export const searchBocha = async (query: string, broadcastLog?: any, taskId?: st
   const results = response.data?.data?.webPages?.value || [];
   if (results.length === 0) return '未检索到相关内容。';
 
-  // 1. 过滤内容农场，提取高质量链接
+  // 1. 根据查询词是否包含白名单（代表深度研报）来决定是否过滤内容农场
+  const isDeepQuery = query.includes('site:gov.cn');
   const contentFarms = ['baijiahao.baidu.com', 'sohu.com', '163.com', 'zhihu.com/question', 'bilibili.com'];
-  const highQualityResults = results.filter((r: any) => {
-    return !contentFarms.some(farm => r.url.includes(farm));
-  });
-
-  const targetResults = highQualityResults.length > 0 ? highQualityResults : results;
+  
+  let targetResults = results;
+  
+  if (isDeepQuery) {
+    // 如果是深度研报，优先过滤内容农场，提取高质量链接
+    const highQualityResults = results.filter((r: any) => {
+      return !contentFarms.some(farm => r.url.includes(farm));
+    });
+    // 如果过滤后还有结果，就用高质量结果，否则降级使用全部结果
+    targetResults = highQualityResults.length > 0 ? highQualityResults : results;
+  } else {
+    // 如果是精简报告，保留所有结果，包括百家号等，以获取更多最新小众信息
+    targetResults = results;
+  }
   
   // 2. 选取 Top 3 链接进行深度抓取
   const topLinks = targetResults.slice(0, 3);
@@ -232,14 +247,36 @@ const analyzeImageWithVLM = async (imageUrl: string, context: string, broadcastL
   }
 };
 
-export const buildKnowledgeBase = async (topic: string, outline: any, broadcastLog: any, taskId: string): Promise<DocumentChunk[]> => {
+const parseLocalFile = async (filePath: string): Promise<string> => {
+  try {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.pdf') {
+      const dataBuffer = fs.readFileSync(filePath);
+      const data = await pdfParse(dataBuffer);
+      return data.text;
+    } else if (ext === '.docx') {
+      const result = await mammoth.extractRawText({ path: filePath });
+      return result.value;
+    } else if (ext === '.txt' || ext === '.md') {
+      return fs.readFileSync(filePath, 'utf8');
+    }
+  } catch (e: any) {
+    logger.error(`Failed to parse local file ${filePath}: ${e.message}`);
+  }
+  return '';
+};
+
+export const buildKnowledgeBase = async (topic: string, outline: any, broadcastLog: any, taskId: string, length: string = '2000', filePaths: string[] = []): Promise<DocumentChunk[]> => {
   broadcastLog(taskId, `🧠 启动 RAG 知识库构建：正在提取检索关键词...`, 'info');
+  
+  const isDeep = length.includes('深度') || length.includes('专业') || length.includes('10000') || length.includes('20000');
+  const whitelist = ' site:gov.cn OR site:edu.cn OR site:mckinsey.com';
   
   // 1. 提取检索关键词
   const queries = new Set<string>();
-  queries.add(topic);
+  queries.add(topic + (isDeep ? whitelist : ''));
   outline.chapters.forEach((c: any) => {
-    queries.add(`${topic} ${c.chapter_title}`);
+    queries.add(`${topic} ${c.chapter_title}` + (isDeep ? whitelist : ''));
   });
   
   const queryArray = Array.from(queries).slice(0, 15); // 限制最多 15 个查询
@@ -347,6 +384,27 @@ export const buildKnowledgeBase = async (topic: string, outline: any, broadcastL
     await Promise.all(scrapePromises);
     broadcastLog(taskId, `⏳ 网页抓取与摘要生成进度: ${Math.min(i + batchSize, uniqueResults.length)}/${uniqueResults.length}...`, 'info');
   }
+  // 3.5 处理本地上传文件 (Hybrid RAG)
+  if (filePaths && filePaths.length > 0) {
+    broadcastLog(taskId, `📁 正在解析 ${filePaths.length} 个本地上传文件...`, 'info');
+    for (const filePath of filePaths) {
+      const fileName = path.basename(filePath);
+      try {
+        const fileText = await parseLocalFile(filePath);
+        if (fileText && fileText.trim().length > 0) {
+          const docSummary = await generateDocumentSummary(fileText, fileName, broadcastLog, taskId);
+          const textChunks = chunkText(fileText, 1000, 200);
+          textChunks.forEach(text => {
+            chunks.push({ text, url: `local://${fileName}`, title: `[本地文件] ${fileName}`, documentSummary: docSummary });
+          });
+          broadcastLog(taskId, `✅ 本地文件 ${fileName} 解析完成，提取 ${textChunks.length} 个文本块。`, 'success');
+        }
+      } catch (e: any) {
+        broadcastLog(taskId, `⚠️ 本地文件 ${fileName} 解析失败: ${e.message}`, 'warning');
+      }
+    }
+  }
+
   broadcastLog(taskId, `🧩 解析完成，共生成 ${chunks.length} 个文本块。正在进行向量化 (Embedding)...`, 'info');
 
   // 4. 批量向量化
@@ -365,10 +423,14 @@ export const buildKnowledgeBase = async (topic: string, outline: any, broadcastL
   return chunks;
 };
 
-export const buildSupplementalKnowledgeBase = async (queries: string[], broadcastLog: any, taskId: string): Promise<DocumentChunk[]> => {
+export const buildSupplementalKnowledgeBase = async (queries: string[], broadcastLog: any, taskId: string, length: string = '2000'): Promise<DocumentChunk[]> => {
   const apiKey = getSetting('bocha_api_key');
   if (!apiKey) return [];
   
+  const isDeep = length.includes('深度') || length.includes('专业') || length.includes('10000') || length.includes('20000');
+  const whitelist = ' site:gov.cn OR site:edu.cn OR site:mckinsey.com';
+  const modifiedQueries = queries.map(q => q + (isDeep ? whitelist : ''));
+
   const proxyUrl = getSetting('http_proxy');
   const axiosConfig: any = {
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -382,7 +444,7 @@ export const buildSupplementalKnowledgeBase = async (queries: string[], broadcas
   }
 
   const allUrls = new Map<string, any>();
-  const searchPromises = queries.map(async (query) => {
+  const searchPromises = modifiedQueries.map(async (query) => {
     try {
       const response = await axios.post(
         'https://api.bochaai.com/v1/web-search',

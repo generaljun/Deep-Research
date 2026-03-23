@@ -16,6 +16,7 @@
     "allowJs": true,
     "jsx": "react-jsx",
     "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
     "noEmit": true
   }
 }

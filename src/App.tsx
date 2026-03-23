@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info, Trash2, Github, Eye, EyeOff } from 'lucide-react';
+import { Send, Settings, FileText, Loader2, CheckCircle, AlertCircle, Database, Server, Key, MessageSquare, Play, Cpu, Network, Zap, Target, Layers, Download, Archive, Moon, Sun, Monitor, HelpCircle, Shield, CheckCircle2, RefreshCw, Info, Trash2, Github, Eye, EyeOff, Plus, ArrowUp, ArrowDown, Upload, X } from 'lucide-react';
 import SetupWizard from './SetupWizard';
 import AnimationDemo from './AnimationDemo';
 import WebGLShader from './components/WebGLShader';
@@ -605,6 +605,9 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [topic, setTopic] = useState('');
   const [length, setLength] = useState('5000-8000');
+  const [files, setFiles] = useState<File[]>([]);
+  const [filePaths, setFilePaths] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -712,11 +715,75 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
 
   const handleStartChat = () => {
     if (!topic.trim()) return;
-    const initialMsg = `我想写一份关于【${topic}】的深度研究报告，字数预期在 ${length} 字。请作为专业的行业分析师，通过4-5轮的追问，帮我明确研究的边界、重点企业和特殊要求，最后在最后一轮直接输出结构化大纲。
-⚠️ 严格指令：请不要自己模拟多轮对话！现在，请直接向我提出第一轮的3-5个核心问题，然后停止输出，等待我的回答。`;
+    
+    let levelDescription = "";
+    let questionFocus = "";
+    if (length.includes('3000')) {
+      levelDescription = "【精简速览级】（侧重广度优先、快速洞察与核心信息汇总）";
+      questionFocus = "重点询问：希望覆盖的核心领域、最关心的宏观数据/趋势、以及目标受众（如高管快速了解）。";
+    } else if (length.includes('5000')) {
+      levelDescription = "【深度研报级】（侧重垂直挖掘、多维交叉验证与方向收窄）";
+      questionFocus = "重点询问：需要深挖的具体细分赛道/技术节点、希望对比的标杆企业、以及需要剖析的行业痛点。";
+    } else {
+      levelDescription = "【专业研报级】（侧重行业前沿、深度战略思考与专业建议反馈）";
+      questionFocus = "重点询问：报告的战略意图（如投资决策、业务转型）、需要推演的未来前沿趋势、以及期望获得的具体战略建议方向。";
+    }
+
+    const initialMsg = `我想写一份关于【${topic}】的研究报告，定位为${levelDescription}，字数预期在 ${length} 字。
+请作为专业的行业分析师，通过4-5轮的追问，帮我明确研究的边界和特殊要求，最后在最后一轮直接输出结构化大纲。
+⚠️ 提问方向指引：${questionFocus}
+⚠️ 严格指令：请不要自己模拟多轮对话！现在，请结合上述定位，直接向我提出第一轮的3-5个核心问题，然后停止输出，等待我的回答。`;
+    
     setMessages([{ role: 'user', content: initialMsg }]);
     setStep(2);
     sendMessage(initialMsg);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    const selectedFiles = Array.from(e.target.files) as File[];
+    
+    const validFiles = selectedFiles.filter(f => {
+      const ext = f.name.split('.').pop()?.toLowerCase();
+      return ['pdf', 'docx', 'txt', 'md'].includes(ext || '');
+    });
+
+    if (validFiles.length !== selectedFiles.length) {
+      alert('只支持上传 PDF, Word (docx), TXT, MD 格式的文件。');
+    }
+
+    if (validFiles.length === 0) return;
+    
+    if (files.length + validFiles.length > 3) {
+      alert('最多只能上传 3 个文件。');
+      return;
+    }
+
+    setFiles(prev => [...prev, ...validFiles]);
+    setUploading(true);
+
+    const formData = new FormData();
+    validFiles.forEach(f => formData.append('files', f));
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setFilePaths(prev => [...prev, ...data.filePaths]);
+      } else {
+        alert(data.error || '上传失败');
+        setFiles(prev => prev.filter(f => !validFiles.includes(f)));
+      }
+    } catch (e) {
+      alert('上传出错');
+      setFiles(prev => prev.filter(f => !validFiles.includes(f)));
+    } finally {
+      setUploading(false);
+    }
   };
 
   const currentYear = new Date().getFullYear();
@@ -787,6 +854,13 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
       }
 
       const data = await res.json();
+      // 为每个章节添加一个唯一 ID，方便在拖拽/移动/删除时保持 React 渲染稳定
+      if (data && data.chapters) {
+        data.chapters = data.chapters.map((ch: any) => ({
+          ...ch,
+          _id: Math.random().toString(36).substr(2, 9)
+        }));
+      }
       setOutline(data);
       setStep(3);
     } catch (error: any) {
@@ -816,7 +890,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ topic: outline?.report_title || topic, length, outline }),
+        body: JSON.stringify({ topic: outline?.report_title || topic, length, outline, filePaths }),
       });
       
       if (!res.ok) {
@@ -941,9 +1015,9 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                   </label>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {[
-                      { len: '3000-5000', label: '简报级', desc: '快速洞察，核心数据提取' },
-                      { len: '5000-8000', label: '研报级', desc: '深度剖析，多维交叉验证' },
-                      { len: '8000-12000', label: '白皮书级', desc: '全景扫描，底层逻辑推演' }
+                      { len: '3000-5000', label: '精简速览级', desc: '广度优先，快速洞察与核心信息汇总' },
+                      { len: '5000-8000', label: '深度研报级', desc: '垂直挖掘，多维交叉验证与方向收窄' },
+                      { len: '8000-12000', label: '专业研报级', desc: '行业前沿，深度战略思考与专业建议反馈' }
                     ].map(({ len, label, desc }) => (
                       <button
                         key={len}
@@ -969,6 +1043,47 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                         </div>
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-cyan-300">
+                    <FileText className="w-4 h-4" />
+                    本地知识库融合 (可选)
+                  </label>
+                  <p className="text-xs text-slate-500 dark:text-cyan-400/60">
+                    上传本地高质量研报（支持 PDF/Word/TXT/MD，最多3份），系统将与 Web Search 结果进行混合检索，提升专业研报质量。
+                  </p>
+                  <div className="flex items-center gap-4">
+                    <label className={`flex items-center justify-center px-4 py-2 border border-dashed rounded-xl cursor-pointer transition-all ${files.length >= 3 ? 'opacity-50 cursor-not-allowed border-slate-300 dark:border-cyan-900/30' : 'border-blue-400 dark:border-cyan-500/50 hover:bg-blue-50 dark:hover:bg-cyan-900/20 text-blue-600 dark:text-cyan-400'}`}>
+                      <input 
+                        type="file" 
+                        multiple 
+                        accept=".pdf,.docx,.txt,.md" 
+                        className="hidden" 
+                        onChange={handleFileUpload}
+                        disabled={files.length >= 3 || uploading}
+                      />
+                      <Upload className="w-4 h-4 mr-2" />
+                      {uploading ? '正在上传...' : '选择文件'}
+                    </label>
+                    <div className="flex flex-wrap gap-2 flex-1">
+                      {files.map((f, i) => (
+                        <div key={i} className="flex items-center gap-2 bg-slate-100 dark:bg-cyan-950/30 px-3 py-1.5 rounded-lg text-xs text-slate-600 dark:text-cyan-300 border border-slate-200 dark:border-cyan-900/30">
+                          <FileText className="w-3 h-3" />
+                          <span className="truncate max-w-[150px]">{f.name}</span>
+                          <button 
+                            onClick={() => {
+                              setFiles(prev => prev.filter((_, idx) => idx !== i));
+                              setFilePaths(prev => prev.filter((_, idx) => idx !== i));
+                            }}
+                            className="text-slate-400 hover:text-red-500 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -1166,9 +1281,9 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
               />
               <div className="space-y-8">
                 {outline.chapters.map((ch, idx) => (
-                  <div key={ch.chapter_num || idx} className="flex gap-5 group">
+                  <div key={ch._id || ch.chapter_num || idx} className="flex gap-5 group relative">
                     <div className="w-10 h-10 rounded-xl bg-blue-50/50 dark:bg-cyan-950/50 border border-slate-200 dark:border-cyan-800 flex items-center justify-center text-sm font-black text-blue-400 dark:text-cyan-500 shrink-0 group-hover:bg-blue-100 dark:bg-cyan-900 group-hover:border-blue-500 dark:border-cyan-500 transition-all shadow-[0_0_10px_rgba(6,182,212,0.05)]">
-                      {String(ch.chapter_num || idx + 1).padStart(2, '0')}
+                      {String(idx + 1).padStart(2, '0')}
                     </div>
                     <div className="flex-1 space-y-2">
                       <input 
@@ -1193,6 +1308,67 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                         className="w-full bg-transparent text-sm text-blue-400 dark:text-slate-500 dark:text-cyan-500/70 leading-relaxed outline-none focus:text-slate-400 resize-y min-h-[60px] overflow-y-auto disabled:opacity-70"
                       />
                     </div>
+                    {status === 'idle' && (
+                      <div className="absolute -right-4 top-0 bottom-0 flex flex-col justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => {
+                            if (idx === 0) return;
+                            const newChapters = [...outline.chapters];
+                            [newChapters[idx], newChapters[idx - 1]] = [newChapters[idx - 1], newChapters[idx]];
+                            newChapters.forEach((c, i) => c.chapter_num = i + 1);
+                            setOutline({...outline, chapters: newChapters});
+                          }}
+                          disabled={idx === 0}
+                          className="p-1 text-slate-400 hover:text-blue-500 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
+                          title="上移"
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            if (idx === outline.chapters.length - 1) return;
+                            const newChapters = [...outline.chapters];
+                            [newChapters[idx], newChapters[idx + 1]] = [newChapters[idx + 1], newChapters[idx]];
+                            newChapters.forEach((c, i) => c.chapter_num = i + 1);
+                            setOutline({...outline, chapters: newChapters});
+                          }}
+                          disabled={idx === outline.chapters.length - 1}
+                          className="p-1 text-slate-400 hover:text-blue-500 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
+                          title="下移"
+                        >
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const newChapters = [...outline.chapters];
+                            newChapters.splice(idx, 1);
+                            newChapters.forEach((c, i) => c.chapter_num = i + 1);
+                            setOutline({...outline, chapters: newChapters});
+                          }}
+                          className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                          title="删除"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const newChapters = [...outline.chapters];
+                            newChapters.splice(idx + 1, 0, {
+                              _id: Math.random().toString(36).substr(2, 9),
+                              chapter_num: 0,
+                              chapter_title: "新章节标题",
+                              core_points: "新章节核心要点"
+                            });
+                            newChapters.forEach((c, i) => c.chapter_num = i + 1);
+                            setOutline({...outline, chapters: newChapters});
+                          }}
+                          className="p-1 text-slate-400 hover:text-emerald-500 transition-colors"
+                          title="在下方插入新章节"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

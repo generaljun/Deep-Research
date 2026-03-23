@@ -15,6 +15,7 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
+import multer from 'multer';
 
 const execAsync = promisify(exec);
 
@@ -26,6 +27,19 @@ console.log('------------------------------------------------');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadsDir)
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    cb(null, uniqueSuffix + '-' + file.originalname)
+  }
+})
+const upload = multer({ storage: storage });
 
 const app = express();
 const PORT = 3000;
@@ -44,9 +58,29 @@ import { buildKnowledgeBase, queryKnowledgeBase, buildSupplementalKnowledgeBase,
 // 5. Core Deep Research Engine & Queue
 // ==========================================
 let runningTask: { id: string, topic: string, user: string, progress: number, status: string } | null = null;
-let taskQueue: { id: string, topic: string, user: string }[] = [];
+let taskQueue: { id: string, topic: string, user: string, length?: string, outline?: any, filePaths?: string[] }[] = [];
 
-const runDeepResearch = async (taskId: string, topic: string, length: string, user: string, providedOutline?: any) => {
+const getLevelPrompt = (length: string) => {
+  if (length.includes('3000')) {
+    return "【报告定位：精简速览级】\n本报告侧重于“广度优先”和“信息汇总”。请提供全景式的行业扫描，快速提取核心数据和关键洞察，无需过度深挖单一技术细节，重点在于帮助读者快速建立全局认知。";
+  } else if (length.includes('5000')) {
+    return "【报告定位：深度研报级】\n本报告侧重于“垂直挖掘”和“方向收窄”。请在梳理全局的基础上，迅速收窄研究方向，对某一核心领域、关键技术或特定市场进行深度剖析，提供多维度的交叉验证和底层逻辑分析。";
+  } else {
+    return "【报告定位：专业研报级】\n本报告侧重于“行业前沿”和“战略反馈”。请以顶级行业专家的视角，不仅提供最前沿的技术/市场深度分析，还必须包含深度思考、未来趋势的推演，以及具有实操价值的战略建议和反馈。";
+  }
+};
+
+const getCriticLevelPrompt = (length: string) => {
+  if (length.includes('3000')) {
+    return `6. 级别适配度（精简速览级）：草稿是否做到了“广度优先”和“高度概括”？如果发现草稿过度深挖单一技术细节而忽略了全局视野，或者缺乏核心信息的提炼，请扣分并要求精简提炼。`;
+  } else if (length.includes('5000')) {
+    return `6. 级别适配度（深度研报级）：草稿是否做到了“垂直挖掘”和“多维验证”？如果发现草稿仅仅是泛泛而谈的表面信息汇总，缺乏对核心逻辑的深度剖析和数据的交叉验证，请打回并要求加深分析深度。`;
+  } else {
+    return `6. 级别适配度（专业研报级）：草稿是否展现了“顶级专家视角”和“战略价值”？如果发现草稿缺乏前瞻性的趋势推演、没有深度的战略思考，或者给出的建议过于空泛缺乏实操性，请严厉打回并要求补充专业洞察与战略反馈。`;
+  }
+};
+
+const runDeepResearch = async (taskId: string, topic: string, length: string, user: string, providedOutline?: any, filePaths: string[] = []) => {
   runningTask = { id: taskId, topic, user, progress: 0, status: 'running' };
   setCurrentRunningTask({ taskId, username: user, topic });
   broadcastSystemStatus();
@@ -59,20 +93,49 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
   const modelCritic = getSetting('model_critic', 'qwen-plus');
   const currentDateStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
 
-  try {
-    broadcastLog(taskId, `🚀 任务启动：${topic}`, 'success');
-    await sendNotifications(`🚀 深度研究已启动！\n课题：${topic}\n任务ID：${taskId}`);
+  let outline = providedOutline;
+  let currentChapterIndex = 0;
+  let chapterStates: any[] = [];
+  let feishuDocId: string | null = null;
+  const previousChapterSummaries: { chapter: string, summary: string }[] = [];
 
-    let outline = providedOutline;
-    if (outline) {
-      broadcastLog(taskId, `✅ 已接收用户确认的大纲，共 ${outline.chapters.length} 章。`);
+  try {
+    const taskRecord = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+    if (taskRecord && (taskRecord.current_chapter_index > 0 || (taskRecord.chapter_states && taskRecord.chapter_states !== '[]'))) {
+      currentChapterIndex = taskRecord.current_chapter_index || 0;
+      chapterStates = JSON.parse(taskRecord.chapter_states || '[]');
+      if (!outline && taskRecord.outline) {
+        outline = JSON.parse(taskRecord.outline);
+      }
+      if (taskRecord.file_path) filePath = taskRecord.file_path;
+      if (taskRecord.feishu_doc_id) feishuDocId = taskRecord.feishu_doc_id;
+      if (taskRecord.file_paths) filePaths = JSON.parse(taskRecord.file_paths);
+      
+      // Restore previous chapter summaries from chapterStates
+      for (const state of chapterStates) {
+        if (state.type === 'chapter' && state.summary) {
+          previousChapterSummaries.push({
+            chapter: `第 ${state.index + 1} 章：${state.title}`,
+            summary: state.summary
+          });
+        }
+      }
+      broadcastLog(taskId, `🔄 发现中断的任务，正在从第 ${currentChapterIndex + 1} 章恢复生成...`, 'info');
     } else {
+      broadcastLog(taskId, `🚀 任务启动：${topic}`, 'success');
+      await sendNotifications(`🚀 深度研究已启动！\n课题：${topic}\n任务ID：${taskId}`);
+    }
+
+    if (!outline) {
       broadcastLog(taskId, `🧠 正在调用规划师 (${modelPlanner}) 生成大纲...`);
       
+      const levelPrompt = getLevelPrompt(length);
       const plannerPrompt = `你是一个只输出 JSON 的数据转换接口。
 当前系统日期：${currentDateStr}。请基于此真实时间背景，对未来趋势进行前瞻性预测，并在提及“近几年”时以此日期为基准。
 请根据用户探讨的课题：【${topic}】，生成一份深度研究报告大纲。
-预期【正文】篇幅：${length}字（不含执行摘要、参考文献）。必须融入行业特性，体现深度思考。
+预期【正文】篇幅：${length}字（不含执行摘要、参考文献）。
+${levelPrompt}
+
 【致命约束】
 1. 严禁偏离主题。所有章节必须紧扣课题：【${topic}】。
 2. 绝对禁止输出任何 Markdown 标记（如 \`\`\`json\`）、禁止输出任何问候语或解释。
@@ -107,45 +170,47 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
         const errCode = e.response?.status || e.code || 'UNKNOWN';
         throw new Error(`[大纲规划模块] 生成大纲失败。错误代码: ${errCode}, 原因: ${e.message}`);
       }
+    } else if (currentChapterIndex === 0) {
+      broadcastLog(taskId, `✅ 已接收用户确认的大纲，共 ${outline.chapters.length} 章。`);
     }
 
-    // 生成带时间戳的文件名: 用户名-报告名-生成时间.md
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat('zh-CN', {
-      timeZone: 'Asia/Shanghai',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false
-    });
-    const parts = formatter.formatToParts(now);
-    const p = Object.fromEntries(parts.map(part => [part.type, part.value]));
-    const timeStr = `${p.year}${p.month}${p.day}_${p.hour}${p.minute}${p.second}`;
-    const safeTitle = outline.report_title.replace(/[\/\\?%*:|"<>]/g, '-');
-    filePath = path.join(reportsDir, `${user}-${safeTitle}-${timeStr}.md`);
+    if (currentChapterIndex === 0 && chapterStates.length === 0) {
+      // 生成带时间戳的文件名: 用户名-报告名-生成时间.md
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false
+      });
+      const parts = formatter.formatToParts(now);
+      const p = Object.fromEntries(parts.map(part => [part.type, part.value]));
+      const timeStr = `${p.year}${p.month}${p.day}_${p.hour}${p.minute}${p.second}`;
+      const safeTitle = outline.report_title.replace(/[\/\\?%*:|"<>]/g, '-');
+      filePath = path.join(reportsDir, `${user}-${safeTitle}-${timeStr}.md`);
 
-    runningTask.progress = 10;
-    broadcastLog(taskId, `✅ 大纲生成完毕，共 ${outline.chapters.length} 章。准备写入本地文件...`, 'success');
-    
-    fs.writeFileSync(filePath, `# ${outline.report_title}\n\n> 本报告由 Deep Research Web 自动生成。\n> 课题：${topic}\n\n---\n\n`);
-
-    // 飞书文档初始化
-    let feishuDocId: string | null = null;
-    try {
-      const doc = await createFeishuDoc(outline.report_title);
-      if (doc) {
-        feishuDocId = doc.document_id;
-        broadcastLog(taskId, `📄 飞书文档已创建：https://bytedance.feishu.cn/docx/${feishuDocId}`, 'success');
-        await appendToFeishuDoc(feishuDocId, `# ${outline.report_title}\n> 课题：${topic}\n\n`);
-      }
-    } catch (e: any) {
-      broadcastLog(taskId, `⚠️ 飞书文档创建失败: ${e.message}`, 'warning');
-    }
-
-    // 生成执行摘要
-    try {
-      broadcastLog(taskId, `📝 正在撰写执行摘要 (Executive Summary)...`);
-      const summaryPrompt = `你是一位顶级的战略咨询顾问。当前系统日期：${currentDateStr}。请根据报告标题【${outline.report_title}】和以下核心要点，撰写一份极具洞察力的“执行摘要（Executive Summary）”。
+      runningTask.progress = 10;
+      broadcastLog(taskId, `✅ 大纲生成完毕，共 ${outline.chapters.length} 章。准备写入本地文件...`, 'success');
       
+      fs.writeFileSync(filePath, `# ${outline.report_title}\n\n> 本报告由 Deep Research Web 自动生成。\n> 课题：${topic}\n\n---\n\n`);
+
+      // 飞书文档初始化
+      try {
+        const doc = await createFeishuDoc(outline.report_title);
+        if (doc) {
+          feishuDocId = doc.document_id;
+          broadcastLog(taskId, `📄 飞书文档已创建：https://bytedance.feishu.cn/docx/${feishuDocId}`, 'success');
+          await appendToFeishuDoc(feishuDocId, `# ${outline.report_title}\n> 课题：${topic}\n\n`);
+        }
+      } catch (e: any) {
+        broadcastLog(taskId, `⚠️ 飞书文档创建失败: ${e.message}`, 'warning');
+      }
+
+      // 生成执行摘要
+      try {
+        broadcastLog(taskId, `📝 正在撰写执行摘要 (Executive Summary)...`);
+        const summaryPrompt = `你是一位顶级的战略咨询顾问。当前系统日期：${currentDateStr}。请根据报告标题【${outline.report_title}】和以下核心要点，撰写一份极具洞察力的“执行摘要（Executive Summary）”。
+        
 核心要点：${outline.executive_summary_points}
 
 要求：
@@ -154,39 +219,64 @@ const runDeepResearch = async (taskId: string, topic: string, length: string, us
 3. 给出具有前瞻性的战略建议。
 4. 篇幅约 500-800 字，直接输出正文，不要任何开场白。`;
 
-      const summaryText = await streamLLMWithProgress(
-        getLLMClient('writer'),
-        modelWriter,
-        [{ role: 'user', content: summaryPrompt }],
-        0.5,
-        taskId,
-        broadcastLog,
-        '正在撰写执行摘要'
-      );
-      
-      const summaryContent = `## 执行摘要 (Executive Summary)\n\n${summaryText}\n\n---\n\n`;
-      fs.appendFileSync(filePath, summaryContent);
-      if (feishuDocId) await appendToFeishuDoc(feishuDocId, summaryContent);
-    } catch (e: any) {
-      broadcastLog(taskId, `⚠️ 执行摘要生成失败: ${e.message}`, 'warning');
+        const summaryText = await streamLLMWithProgress(
+          getLLMClient('writer'),
+          modelWriter,
+          [{ role: 'user', content: summaryPrompt }],
+          0.5,
+          taskId,
+          broadcastLog,
+          '正在撰写执行摘要'
+        );
+        
+        const summaryContent = `## 执行摘要 (Executive Summary)\n\n${summaryText}\n\n---\n\n`;
+        fs.appendFileSync(filePath, summaryContent);
+        if (feishuDocId) await appendToFeishuDoc(feishuDocId, summaryContent);
+        
+        chapterStates.push({
+          type: 'summary',
+          content: summaryContent
+        });
+        
+        // Save initial state
+        db.prepare('UPDATE tasks SET current_chapter_index = ?, chapter_states = ?, outline = ?, file_path = ?, feishu_doc_id = ?, file_paths = ? WHERE id = ?')
+          .run(0, JSON.stringify(chapterStates), JSON.stringify(outline), filePath, feishuDocId, JSON.stringify(filePaths), taskId);
+          
+      } catch (e: any) {
+        broadcastLog(taskId, `⚠️ 执行摘要生成失败: ${e.message}`, 'warning');
+      }
+    } else if (chapterStates.length > 0) {
+      // Reconstruct file if resuming
+      broadcastLog(taskId, `🔄 正在重建本地文件...`, 'info');
+      if (!filePath) {
+        const safeTitle = outline.report_title.replace(/[\/\\?%*:|"<>]/g, '-');
+        filePath = path.join(reportsDir, `${user}-${safeTitle}-resumed-${Date.now()}.md`);
+      }
+      fs.writeFileSync(filePath, `# ${outline.report_title}\n\n> 本报告由 Deep Research Web 自动生成。\n> 课题：${topic}\n\n---\n\n`);
+      for (const state of chapterStates) {
+        if (state.type === 'summary') {
+          fs.appendFileSync(filePath, state.content);
+        } else if (state.type === 'chapter') {
+          fs.appendFileSync(filePath, `${state.content}\n\n`);
+        }
+      }
     }
 
-    const previousChapterSummaries: { chapter: string, summary: string }[] = [];
-    
     let knowledgeBase: DocumentChunk[] = [];
     try {
-      knowledgeBase = await buildKnowledgeBase(topic, outline, broadcastLog, taskId);
+      knowledgeBase = await buildKnowledgeBase(topic, outline, broadcastLog, taskId, length, filePaths);
     } catch (e: any) {
       broadcastLog(taskId, `⚠️ 构建 RAG 知识库失败: ${e.message}。将降级使用传统单次检索。`, 'warning');
     }
 
-    for (let i = 0; i < outline.chapters.length; i++) {
+    for (let i = currentChapterIndex; i < outline.chapters.length; i++) {
       const chapter = outline.chapters[i];
       const cleanTitle = chapter.chapter_title.trim().replace(/^(第\s*[\d一二三四五六七八九十百]+\s*章[：:\s]*)+/, '').trim();
       runningTask.progress = 10 + Math.floor((i / outline.chapters.length) * 80);
       broadcastLog(taskId, `🔍 开始处理：${chapter.chapter_title}`);
       
       let searchResults = '';
+      let finalContentForState = '';
       try {
         if (knowledgeBase.length > 0) {
           broadcastLog(taskId, `🌐 正在从专属 RAG 知识库中检索本章素材...`);
@@ -230,7 +320,7 @@ ${searchResults}
               broadcastLog(taskId, `⚠️ 素材饱和度不足：${researchResult.reason}`, 'warning');
               broadcastLog(taskId, `🔍 触发多跳检索 (Multi-hop Research)，正在补充搜索：${researchResult.new_queries.join(', ')}`, 'info');
               
-              const newChunks = await buildSupplementalKnowledgeBase(researchResult.new_queries, broadcastLog, taskId);
+              const newChunks = await buildSupplementalKnowledgeBase(researchResult.new_queries, broadcastLog, taskId, length);
               if (newChunks.length > 0) {
                 knowledgeBase.push(...newChunks);
                 broadcastLog(taskId, `✅ 补充检索完成，知识库新增 ${newChunks.length} 个文本块。重新检索本章素材...`, 'success');
@@ -246,7 +336,11 @@ ${searchResults}
           }
         } else {
           broadcastLog(taskId, `🌐 正在调用博查 API 检索素材...`);
-          searchResults = await withRetry(() => searchBocha(`${topic} ${chapter.chapter_title} ${chapter.core_points}`, broadcastLog, taskId));
+          let query = `${topic} ${chapter.chapter_title} ${chapter.core_points}`;
+          if (length.includes('深度') || length.includes('专业') || length.includes('10000') || length.includes('20000')) {
+            query += ' site:gov.cn OR site:edu.cn OR site:mckinsey.com';
+          }
+          searchResults = await withRetry(() => searchBocha(query, broadcastLog, taskId));
           broadcastLog(taskId, `✅ 检索完成，获取到有效参考素材。`, 'success');
         }
       } catch (e: any) {
@@ -266,9 +360,11 @@ ${searchResults}
           });
         }
 
+        const levelPrompt = getLevelPrompt(length);
         const writerPrompt = `你是一位顶级的学术研究员与行业资深撰稿人。
 当前系统日期：${currentDateStr}。请基于此真实时间背景，对未来趋势进行前瞻性预测，并在提及“近几年”、“当前”时严格以此日期为基准。
 请根据【课题名称】、【章节标题】以及提供的【参考素材】，撰写本章的正文内容。
+${levelPrompt}
 ${contextPrompt}
 【学术规范与行文要求】
 1. 严禁偏离主题：本章正文必须严格围绕【课题名称】、【章节标题】和【核心论点】展开，严禁插入任何与本课题无关的内容（如AI大模型、固态储氢、碳排放等，除非课题本身相关）。
@@ -375,6 +471,7 @@ ${searchResults}`;
 
           // 调用审稿人
           broadcastLog(taskId, `🧐 正在调用审稿人 (${modelCritic}) 进行审查 (第 ${retryCount + 1} 次尝试)...`);
+          const criticLevelPrompt = getCriticLevelPrompt(length);
           const criticPrompt = `你是一位严苛的报告审稿人与事实核查员（Fact-Checker）。当前系统日期：${currentDateStr}。请严格对比【作者草稿】与【参考素材】，对草稿进行深度审查。
 
 【审查标准】
@@ -383,6 +480,7 @@ ${searchResults}`;
 3. 内容充实度？（字数是否达标，论述是否深入）
 4. 数据图表？（必须包含至少一个 Markdown 格式的数据表格，且表格数据必须来源于参考素材）
 5. 案例具体化？（如果包含案例，是否明确指出了具体的公司、项目、机构名称，而不是使用“某单位”、“某项目”等模糊词汇。如果发现模糊化处理，请打回并要求写出具体名称）
+${criticLevelPrompt}
 
 【课题名称】：${topic}
 【章节标题】：${cleanTitle}
@@ -469,6 +567,7 @@ ${finalContent}
           finalContent = finalContent.replace(/(?:```\w*\s*)?<suggested_new_sections>[\s\S]*?<\/suggested_new_sections>(?:\s*```)?/, '').trim();
         }
 
+        finalContentForState = finalContent;
         fs.appendFileSync(filePath, `${finalContent}\n\n`);
         
         // 生成本章摘要，更新全局记忆
@@ -510,7 +609,30 @@ ${finalContent}
       } catch (e: any) {
         const errCode = e.response?.status || e.code || 'UNKNOWN';
         broadcastLog(taskId, `❌ [撰写模块] 本章撰写失败。错误代码: ${errCode}, 原因: ${e.message}。已写入降级占位符。`, 'error');
-        fs.appendFileSync(filePath, `## 第 ${i + 1} 章：${cleanTitle}\n\n>[系统提示：本章节生成超时或API无响应，为防止工作流中断已跳过，请人工补充]\n\n`);
+        const fallbackContent = `## 第 ${i + 1} 章：${cleanTitle}\n\n>[系统提示：本章节生成超时或API无响应，为防止工作流中断已跳过，请人工补充]`;
+        fs.appendFileSync(filePath, `${fallbackContent}\n\n`);
+        finalContentForState = fallbackContent;
+        previousChapterSummaries.push({
+          chapter: `第 ${i + 1} 章：${cleanTitle}`,
+          summary: chapter.core_points
+        });
+      }
+
+      // Save progress
+      chapterStates.push({
+        type: 'chapter',
+        index: i,
+        title: cleanTitle,
+        content: finalContentForState,
+        summary: previousChapterSummaries[previousChapterSummaries.length - 1].summary
+      });
+      
+      try {
+        db.prepare('UPDATE tasks SET current_chapter_index = ?, chapter_states = ?, outline = ?, file_path = ?, feishu_doc_id = ?, file_paths = ? WHERE id = ?')
+          .run(i + 1, JSON.stringify(chapterStates), JSON.stringify(outline), filePath, feishuDocId, JSON.stringify(filePaths), taskId);
+        broadcastLog(taskId, `💾 任务进度已保存 (断点续传)`);
+      } catch (e: any) {
+        logger.error(`Failed to save task progress: ${e.message}`);
       }
 
       if (i < outline.chapters.length - 1) {
@@ -571,7 +693,10 @@ ${finalContent}
     broadcastSystemStatus();
     if (taskQueue.length > 0) {
       const nextTask = taskQueue.shift()!;
-      runDeepResearch(nextTask.id, nextTask.topic, '2000', nextTask.user);
+      runDeepResearch(nextTask.id, nextTask.topic, nextTask.length || '深度研报级', nextTask.user, nextTask.outline, nextTask.filePaths).catch(e => {
+        logger.error(`Failed to resume task ${nextTask.id}: ${e.message}`);
+        db.prepare("UPDATE tasks SET status = 'failed' WHERE id = ?").run(nextTask.id);
+      });
     }
   }
 };
@@ -1090,9 +1215,23 @@ app.post('/api/settings', authenticateToken, requireAdmin, (req, res) => {
 });
 
 // Task API
+app.post('/api/upload', authenticateToken, upload.array('files', 5), (req, res) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    const filePaths = files.map(f => f.path);
+    res.json({ filePaths, message: 'Files uploaded successfully' });
+  } catch (e: any) {
+    logger.error(`Error uploading files: ${e.message}`);
+    res.status(500).json({ error: `上传文件失败: ${e.message}` });
+  }
+});
+
 app.post('/api/research', authenticateToken, (req, res) => {
   try {
-    const { topic, length, outline } = req.body;
+    const { topic, length, outline, filePaths } = req.body;
     if (!topic) return res.status(400).json({ error: 'Topic is required' });
 
     const taskId = Date.now().toString();
@@ -1122,11 +1261,14 @@ app.post('/api/research', authenticateToken, (req, res) => {
       });
     }
 
-    db.prepare('INSERT INTO tasks (id, topic, status) VALUES (?, ?, ?)').run(taskId, topic, 'running');
+    db.prepare('INSERT INTO tasks (id, topic, status, length, user, outline, file_paths) VALUES (?, ?, ?, ?, ?, ?, ?)').run(taskId, topic, 'running', length, user, outline ? JSON.stringify(outline) : null, filePaths ? JSON.stringify(filePaths) : null);
     db.prepare('UPDATE users SET quota = quota - 1, used_quota = used_quota + 1, daily_used = daily_used + 1 WHERE username = ?').run(user);
     
     logger.info(`User ${user} started research task: ${topic}`);
-    runDeepResearch(taskId, topic, length, user, outline);
+    runDeepResearch(taskId, topic, length, user, outline, filePaths || []).catch(e => {
+      logger.error(`Task ${taskId} failed: ${e.message}`);
+      db.prepare("UPDATE tasks SET status = 'failed' WHERE id = ?").run(taskId);
+    });
     
     res.json({ taskId, message: 'Task started successfully' });
   } catch (e: any) {
@@ -1363,7 +1505,10 @@ app.post('/api/generate-outline', authenticateToken, async (req, res) => {
     const { topic, length } = req.body;
     const client = getLLMClient('planner');
     const currentDateStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+    const levelPrompt = getLevelPrompt(length);
     const prompt = `你是一个只输出 JSON 的数据转换接口。当前系统日期：${currentDateStr}。请基于此真实时间背景，对未来趋势进行前瞻性预测。请根据用户探讨的课题：【${topic}】，生成一份深度研究报告大纲。预期篇幅：${length}字。
+${levelPrompt}
+
 必须严格遵守以下 JSON 结构：
 {
   "report_title": "报告主标题",
@@ -1402,6 +1547,40 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     logger.info(`Server running on http://localhost:${PORT}`);
+    
+    // Resume interrupted tasks
+    try {
+      const interruptedTasks = db.prepare("SELECT * FROM tasks WHERE status = 'running' OR status = 'interrupted'").all() as any[];
+      for (const task of interruptedTasks) {
+        if (task.current_chapter_index > 0 || (task.chapter_states && task.chapter_states !== '[]')) {
+          logger.info(`Found interrupted task: ${task.id} - ${task.topic}. Queuing for resume...`);
+          // Mark as interrupted briefly to trigger resume logic cleanly
+          db.prepare("UPDATE tasks SET status = 'interrupted' WHERE id = ?").run(task.id);
+          
+          taskQueue.push({
+            id: task.id,
+            topic: task.topic,
+            user: task.user || 'admin',
+            length: task.length || '深度研报级',
+            filePaths: task.file_paths ? JSON.parse(task.file_paths) : []
+          });
+        } else {
+          // If it hasn't even started chapter 1, just mark it as failed
+          db.prepare("UPDATE tasks SET status = 'failed' WHERE id = ?").run(task.id);
+        }
+      }
+      
+      // Start the first task in queue if not already running
+      if (taskQueue.length > 0 && !currentRunningTask) {
+        const nextTask = taskQueue.shift()!;
+        runDeepResearch(nextTask.id, nextTask.topic, nextTask.length || '深度研报级', nextTask.user, undefined, nextTask.filePaths).catch(e => {
+          logger.error(`Failed to resume task ${nextTask.id}: ${e.message}`);
+          db.prepare("UPDATE tasks SET status = 'failed' WHERE id = ?").run(nextTask.id);
+        });
+      }
+    } catch (e: any) {
+      logger.error(`Failed to check for interrupted tasks: ${e.message}`);
+    }
   });
 }
 
