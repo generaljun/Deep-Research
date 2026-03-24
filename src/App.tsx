@@ -629,8 +629,41 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
   const [systemStatus, setSystemStatus] = useState<{ isBusy: boolean, currentTask: any }>({ isBusy: false, currentTask: null });
   const [currentUser, setCurrentUser] = useState(user);
   
+  // Helper to reorder and re-number chapters consistently
+  const reorderChapters = (chapters: any[]) => {
+    const chineseNums = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十'];
+    return chapters.map((c, i) => {
+      const num = i + 1;
+      const chineseNum = chineseNums[i] || num.toString();
+      
+      // Extract the title content, removing any existing "第X章" or "X." or "X、" prefix
+      let titleContent = c.chapter_title;
+      
+      // Match "第X章", "第 X 章", "第X章：", "第X章:", "第X章 "
+      const prefixRegex = /^第\s*[\d一二三四五六七八九十百]+\s*章[：:\s]*/;
+      if (prefixRegex.test(titleContent)) {
+        titleContent = titleContent.replace(prefixRegex, '');
+      } else {
+        // Also try to match "1. ", "1、", "一、", "一. "
+        const simplePrefixRegex = /^[\d一二三四五六七八九十百]+[.\s、：:]+/;
+        if (simplePrefixRegex.test(titleContent)) {
+          titleContent = titleContent.replace(simplePrefixRegex, '');
+        }
+      }
+      
+      const newTitle = `第${chineseNum}章：${titleContent.trim()}`;
+      return { ...c, chapter_num: num, chapter_title: newTitle };
+    });
+  };
+
   // Track conversation turn (1 to 5)
-  const conversationTurn = Math.min(5, Math.floor(messages.filter(m => m.role === 'user').length));
+  const maxTurns = mode === 'collection' ? 3 : 5;
+  const currentChatStages = mode === 'collection' ? [
+    { id: 1, title: '初探意图', desc: '明确核心搜索维度与目标', icon: Target },
+    { id: 2, title: '边界界定', desc: '圈定时间范围与重点关注对象', icon: Layers },
+    { id: 3, title: '大纲定稿', desc: 'AI 总结并生成情报收集大纲', icon: Zap },
+  ] : CHAT_STAGES;
+  const conversationTurn = Math.min(maxTurns, Math.floor(messages.filter(m => m.role === 'user').length));
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -729,7 +762,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
 2. 重点关注的时间范围（如：近1年、近3年）。
 3. 是否有特定的竞争对手、对标产品或细分赛道需要重点关注。
 
-⚠️ 任务目标：广泛搜集资料并整理，注明出处，核验幻觉，梳理清晰。
+⚠️ 任务目标：广泛搜集资料并整理，注明出处，核验幻觉，梳理清晰。绝对不要写行业背景、研究意义等水文内容。
 请直接向我提出第一轮的3个核心问题，然后停止输出，等待我的回答。`;
     } else {
       let levelDescription = "";
@@ -858,7 +891,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ topic, length }),
+        body: JSON.stringify({ topic, length: mode === 'collection' ? 'collection' : length }),
       });
       
       if (!res.ok) {
@@ -901,6 +934,12 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
     setStatus('generating');
     setLogs([]);
     try {
+      // Strip internal _id field before sending to backend
+      const cleanOutline = outline ? {
+        ...outline,
+        chapters: outline.chapters.map(({ _id, ...rest }: any) => rest)
+      } : null;
+
       const res = await fetch('/api/research', {
         method: 'POST',
         headers: { 
@@ -910,7 +949,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
         body: JSON.stringify({ 
           topic: outline?.report_title || topic, 
           length: mode === 'collection' ? 'collection' : length, 
-          outline, 
+          outline: cleanOutline, 
           filePaths 
         }),
       });
@@ -1172,7 +1211,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
             <div className="absolute top-0 left-0 w-full h-1 bg-blue-50 dark:bg-cyan-950">
               <div 
                 className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-500 ease-out"
-                style={{ width: `${(Math.max(1, conversationTurn) / 5) * 100}%` }}
+                style={{ width: `${(Math.max(1, conversationTurn) / maxTurns) * 100}%` }}
               ></div>
             </div>
 
@@ -1180,7 +1219,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
               <div>
                 <h2 className="text-lg font-bold text-slate-800 dark:text-cyan-50 flex items-center gap-2">
                   <Network className="w-5 h-5 text-blue-500 dark:text-cyan-400" />
-                  认知对齐矩阵 (Phase {Math.max(1, conversationTurn)}/5)
+                  认知对齐矩阵 (Phase {Math.max(1, conversationTurn)}/{maxTurns})
                 </h2>
                 <p className="text-xs text-blue-500 dark:text-slate-500 dark:text-cyan-400/60 mt-1">AI 正在通过多轮对话锚定研究边界</p>
               </div>
@@ -1191,7 +1230,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                   className="flex-1 md:flex-none text-sm bg-blue-50/50 dark:bg-cyan-950/50 text-slate-600 dark:text-cyan-300 border border-blue-200 dark:border-cyan-500/30 px-4 py-2 rounded-xl hover:bg-blue-100/50 dark:bg-cyan-900/50 hover:border-blue-500 dark:hover:border-cyan-400 transition-all flex items-center justify-center gap-2 shadow-sm dark:shadow-[0_0_10px_rgba(6,182,212,0.1)]"
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                  {loading ? '正在编译大纲...' : (conversationTurn >= 5 ? '生成大纲' : '跳过对话，直接生成大纲')}
+                  {loading ? '正在编译大纲...' : (conversationTurn >= maxTurns ? '生成大纲' : '跳过对话，直接生成大纲')}
                 </button>
               </div>
             </div>
@@ -1202,7 +1241,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
               className="px-6 py-4 bg-blue-50/10 dark:bg-cyan-950/10 border-b border-slate-100 dark:border-cyan-900/20 overflow-x-auto scrollbar-hide"
             >
               <div className="flex items-center justify-between min-w-[600px] gap-2">
-                {CHAT_STAGES.map((stage, idx) => {
+                {currentChatStages.map((stage, idx) => {
                   const isActive = Math.max(1, conversationTurn) === stage.id;
                   const isPast = Math.max(1, conversationTurn) > stage.id;
                   const Icon = stage.icon;
@@ -1210,7 +1249,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                   return (
                     <div key={stage.id} className={`flex-1 flex flex-col items-center relative group ${isActive ? 'active-stage' : ''}`}>
                       {/* Connecting Line */}
-                      {idx < CHAT_STAGES.length - 1 && (
+                      {idx < currentChatStages.length - 1 && (
                         <div className={`absolute top-5 left-[50%] w-full h-[2px] ${isPast ? 'bg-cyan-500/50' : 'bg-blue-100/30 dark:bg-cyan-900/30'}`}></div>
                       )}
                       
@@ -1271,7 +1310,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
             </div>
 
             <div className="p-6 bg-slate-50 dark:bg-[#030712] border-t border-slate-100 dark:border-cyan-900/30">
-              {conversationTurn >= 5 ? (
+              {conversationTurn >= maxTurns ? (
                 <button
                   onClick={handleGenerateOutline}
                   disabled={loading}
@@ -1375,8 +1414,8 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                             if (idx === 0) return;
                             const newChapters = [...outline.chapters];
                             [newChapters[idx], newChapters[idx - 1]] = [newChapters[idx - 1], newChapters[idx]];
-                            newChapters.forEach((c, i) => c.chapter_num = i + 1);
-                            setOutline({...outline, chapters: newChapters});
+                            const finalChapters = reorderChapters(newChapters);
+                            setOutline({...outline, chapters: finalChapters});
                           }}
                           disabled={idx === 0}
                           className="p-1 text-slate-400 hover:text-blue-500 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
@@ -1389,8 +1428,8 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                             if (idx === outline.chapters.length - 1) return;
                             const newChapters = [...outline.chapters];
                             [newChapters[idx], newChapters[idx + 1]] = [newChapters[idx + 1], newChapters[idx]];
-                            newChapters.forEach((c, i) => c.chapter_num = i + 1);
-                            setOutline({...outline, chapters: newChapters});
+                            const finalChapters = reorderChapters(newChapters);
+                            setOutline({...outline, chapters: finalChapters});
                           }}
                           disabled={idx === outline.chapters.length - 1}
                           className="p-1 text-slate-400 hover:text-blue-500 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
@@ -1402,8 +1441,8 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                           onClick={() => {
                             const newChapters = [...outline.chapters];
                             newChapters.splice(idx, 1);
-                            newChapters.forEach((c, i) => c.chapter_num = i + 1);
-                            setOutline({...outline, chapters: newChapters});
+                            const finalChapters = reorderChapters(newChapters);
+                            setOutline({...outline, chapters: finalChapters});
                           }}
                           className="p-1 text-slate-400 hover:text-red-500 transition-colors"
                           title="删除"
@@ -1419,8 +1458,8 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
                               chapter_title: "新章节标题",
                               core_points: "新章节核心要点"
                             });
-                            newChapters.forEach((c, i) => c.chapter_num = i + 1);
-                            setOutline({...outline, chapters: newChapters});
+                            const finalChapters = reorderChapters(newChapters);
+                            setOutline({...outline, chapters: finalChapters});
                           }}
                           className="p-1 text-slate-400 hover:text-emerald-500 transition-colors"
                           title="在下方插入新章节"
