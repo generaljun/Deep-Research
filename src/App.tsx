@@ -657,11 +657,12 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
   };
 
   // Track conversation turn (1 to 5)
-  const maxTurns = mode === 'collection' ? 3 : 5;
+  const maxTurns = mode === 'collection' ? 4 : 5;
   const currentChatStages = mode === 'collection' ? [
     { id: 1, title: '初探意图', desc: '明确核心搜索维度与目标', icon: Target },
     { id: 2, title: '边界界定', desc: '圈定时间范围与重点关注对象', icon: Layers },
-    { id: 3, title: '大纲定稿', desc: 'AI 总结并生成情报收集大纲', icon: Zap },
+    { id: 3, title: '深度挖掘', desc: '补充特殊要求与长尾关键词', icon: Network },
+    { id: 4, title: '大纲定稿', desc: 'AI 总结并生成情报收集大纲', icon: Zap },
   ] : CHAT_STAGES;
   const conversationTurn = Math.min(maxTurns, Math.floor(messages.filter(m => m.role === 'user').length));
 
@@ -756,14 +757,15 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
     
     let initialMsg = "";
     if (mode === 'collection') {
-      initialMsg = `我想进行关于【${topic}】的行业信息收集与情报整理。
+      initialMsg = `我想进行关于【${topic}】的信息收集与情报整理。
 请作为专业的情报分析师，通过3轮对话帮我明确：
-1. 核心搜索维度（如：市场规模、竞争对手动态、技术专利、政策风险、价格变动等）。
-2. 重点关注的时间范围（如：近1年、近3年）。
-3. 是否有特定的竞争对手、对标产品或细分赛道需要重点关注。
+1. 核心收集目标（如果我的主题已经很明确，比如只需收集案例，请直接确认资料来源和筛选标准；如果主题宏大，请帮我聚焦细分方向）。
+2. 重点关注的时间范围与地域范围。
+3. 期望的信息颗粒度与特定要求（如：是否需要具体数据、特定格式等）。
 
-⚠️ 任务目标：广泛搜集资料并整理，注明出处，核验幻觉，梳理清晰。绝对不要写行业背景、研究意义等水文内容。
-请直接向我提出第一轮的3个核心问题，然后停止输出，等待我的回答。`;
+⚠️ 任务目标：精准搜集与主题强相关的资料，拒绝泛泛而谈的“行业报告”式八股文（如不需要政策、宏观环境等，除非我明确要求）。
+⚠️ 严格指令：请在你的第4次回复时停止提问，直接总结我的需求，并告诉我“已准备好生成大纲”。
+请直接向我提出第一轮的2-3个核心问题，然后停止输出，等待我的回答。`;
     } else {
       let levelDescription = "";
       let questionFocus = "";
@@ -779,9 +781,9 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
       }
 
       initialMsg = `我想写一份关于【${topic}】的研究报告，定位为${levelDescription}，字数预期在 ${length} 字。
-请作为专业的行业分析师，通过4-5轮的追问，帮我明确研究的边界和特殊要求，最后在最后一轮直接输出结构化大纲。
+请作为专业的行业分析师，通过4-5轮的追问，帮我明确研究的边界和特殊要求。
 ⚠️ 提问方向指引：${questionFocus}
-⚠️ 严格指令：请不要自己模拟多轮对话！现在，请结合上述定位，直接向我提出第一轮的3-5个核心问题，然后停止输出，等待我的回答。`;
+⚠️ 严格指令：请不要自己模拟多轮对话！请在你的第5次回复时停止提问，直接总结我的需求，并告诉我“已准备好生成大纲”。现在，请结合上述定位，直接向我提出第一轮的3-5个核心问题，然后停止输出，等待我的回答。`;
     }
     
     setMessages([{ role: 'user', content: initialMsg }]);
@@ -891,7 +893,7 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ topic, length: mode === 'collection' ? 'collection' : length }),
+        body: JSON.stringify({ topic, length: mode === 'collection' ? 'collection' : length, messages }),
       });
       
       if (!res.ok) {

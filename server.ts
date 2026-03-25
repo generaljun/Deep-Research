@@ -1643,34 +1643,34 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
 
 app.post('/api/generate-outline', authenticateToken, async (req, res) => {
   try {
-    const { topic, length } = req.body;
+    const { topic, length, messages } = req.body;
     const client = getLLMClient('planner');
     const currentDateStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
     const levelPrompt = getLevelPrompt(length);
     const prompt = length === 'collection' ? 
       `你是一个只输出 JSON 的数据转换接口。
 当前系统日期：${currentDateStr}。
-请根据用户探讨的课题：【${topic}】，生成一份“行业信息收集与情报整理”大纲。
-预期篇幅：广泛搜集，不设严格字数上限，但需确保信息密度。
+请根据用户探讨的课题：【${topic}】，以及之前的对话记录，生成一份“信息收集与情报整理”大纲。
+预期篇幅：根据用户需求精准搜集，不设严格字数上限，但需确保信息密度。
 ${levelPrompt}
 
 【致命约束】
-1. 严禁偏离主题。所有章节必须紧扣课题：【${topic}】。
-2. 章节设计应侧重于“事实罗列”和“情报分类”（如：政策环境、市场竞争、技术动态、重点企业、风险预警等）。绝对不要设计“行业背景”、“研究意义”、“发展历程”等水文章节。
+1. 严禁偏离主题和用户在对话中明确的需求。如果用户只需要特定方向（如“案例调研”），大纲必须100%聚焦于该方向，绝对不要自行添加“政策环境”、“宏观市场”、“技术原理”等无关章节！
+2. 章节设计应完全基于用户需求进行分类（例如：按应用场景分类、按时间线分类、按企业分类等），侧重于“事实罗列”和“精准情报”。绝对不要设计“行业背景”、“研究意义”、“发展历程”等水文章节。
 3. 绝对禁止输出任何 Markdown 标记（如 \`\`\`json\`）、禁止输出任何问候语或解释。
 4. 必须严格遵守以下 JSON 结构：
 {
   "report_title": "情报整理：${topic}",
-  "executive_summary_points": "本次情报搜集的整体背景与核心价值点总结",
+  "executive_summary_points": "本次情报搜集的核心目标与筛选标准总结",
   "chapters": [
     {
       "chapter_num": 1,
       "chapter_title": "第一章：...",
-      "core_points": "本章需要搜集的核心情报维度，请确保涵盖广泛的信息点。"
+      "core_points": "本章需要搜集的具体情报内容，请确保与用户需求强相关。"
     }
   ]
 }` : 
-      `你是一个只输出 JSON 的数据转换接口。当前系统日期：${currentDateStr}。请基于此真实时间背景，对未来趋势进行前瞻性预测。请根据用户探讨的课题：【${topic}】，生成一份深度研究报告大纲。预期篇幅：${length}字。
+      `你是一个只输出 JSON 的数据转换接口。当前系统日期：${currentDateStr}。请基于此真实时间背景，对未来趋势进行前瞻性预测。请根据用户探讨的课题：【${topic}】，以及之前的对话记录，生成一份深度研究报告大纲。预期篇幅：${length}字。
 ${levelPrompt}
 
 必须严格遵守以下 JSON 结构：
@@ -1685,9 +1685,13 @@ ${levelPrompt}
     }
   ]
 }`;
+
+    const chatMessages = messages && Array.isArray(messages) ? messages.map((m: any) => ({ role: m.role, content: m.content })) : [];
+    chatMessages.push({ role: 'user', content: prompt });
+
     const response = await client.chat.completions.create({
       model: getSetting('model_planner', 'qwen-plus'),
-      messages: [{ role: 'user', content: prompt }],
+      messages: chatMessages,
       temperature: 0.1,
     });
     let rawJson = response.choices[0].message.content || '';
