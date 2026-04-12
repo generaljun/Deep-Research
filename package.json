@@ -15,7 +15,7 @@
     "@fontsource-variable/geist": "^5.2.8",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
-    "axios": "^1.13.6",
+    "axios": "^1.15.0",
     "better-sqlite3": "^12.4.1",
     "cors": "^2.8.6",
     "express": "^4.21.2",
