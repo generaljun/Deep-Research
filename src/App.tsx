@@ -657,12 +657,10 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
   };
 
   // Track conversation turn (1 to 5)
-  const maxTurns = mode === 'collection' ? 4 : 5;
+  const maxTurns = mode === 'collection' ? 2 : 5;
   const currentChatStages = mode === 'collection' ? [
-    { id: 1, title: '初探意图', desc: '明确核心搜索维度与目标', icon: Target },
-    { id: 2, title: '边界界定', desc: '圈定时间范围与重点关注对象', icon: Layers },
-    { id: 3, title: '深度挖掘', desc: '补充特殊要求与长尾关键词', icon: Network },
-    { id: 4, title: '大纲定稿', desc: 'AI 总结并生成情报收集大纲', icon: Zap },
+    { id: 1, title: '初探要求', desc: '明确想收集的具体对象与排重规则', icon: Target },
+    { id: 2, title: '结构总结', desc: '提炼表格字段并生成专属抓取大纲', icon: Zap },
   ] : CHAT_STAGES;
   const conversationTurn = Math.min(maxTurns, Math.floor(messages.filter(m => m.role === 'user').length));
 
@@ -757,15 +755,15 @@ function GeneratorView({ token, user, onLogout, isActive, setActiveTab }: { toke
     
     let initialMsg = "";
     if (mode === 'collection') {
-      initialMsg = `我想进行关于【${topic}】的信息收集与情报整理。
-请作为专业的情报分析师，通过3轮对话帮我明确：
-1. 核心收集目标（如果我的主题已经很明确，比如只需收集案例，请直接确认资料来源和筛选标准；如果主题宏大，请帮我聚焦细分方向）。
-2. 重点关注的时间范围与地域范围。
-3. 期望的信息颗粒度与特定要求（如：是否需要具体数据、特定格式等）。
+      initialMsg = `我想进行关于【${topic}】的纯粹信息搜集。
+请作为专业的数据采集器，只需要简单1轮对话向我确认：
+1. 你希望重点收集哪几类具体信息实体？（比如：具体企业案例、最新政策法规、某个产品的参数等）
+2. 期望的表格呈现里，需要包含哪些具体列/字段？（如时间、公司名、项目详情、涉及金额等）
+3. 有什么是不需要收集的杂音？
 
-⚠️ 任务目标：精准搜集与主题强相关的资料，拒绝泛泛而谈的“行业报告”式八股文（如不需要政策、宏观环境等，除非我明确要求）。
-⚠️ 严格指令：请在你的第4次回复时停止提问，直接总结我的需求，并告诉我“已准备好生成大纲”。
-请直接向我提出第一轮的2-3个核心问题，然后停止输出，等待我的回答。`;
+⚠️ 任务目标：我不需要任何分析报告和总结文字！我需要的是纯粹的新闻、案例、数据的收集，并且最后以**巨型表格（条目越多越全越好）**的形式呈现给我。
+⚠️ 严格指令：请务必在你的第2次回复时直接停止提问，总结我想要的表格需求，并告诉我“已准备好生成纯表格大纲”。
+现在，请直接向我提出问题，然后停止输出，等待我的回答。`;
     } else {
       let levelDescription = "";
       let questionFocus = "";

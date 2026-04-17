@@ -313,7 +313,8 @@ export const buildKnowledgeBase = async (topic: string, outline: any, broadcastL
       const results = response.data?.data?.webPages?.value || [];
       const contentFarms = ['baijiahao.baidu.com', 'sohu.com', '163.com', 'zhihu.com/question', 'bilibili.com'];
       results.forEach((r: any) => {
-        if (!contentFarms.some(farm => r.url.includes(farm))) {
+        const isContentFarm = contentFarms.some(farm => r.url.includes(farm));
+        if (length === 'collection' || !isContentFarm) {
           if (!allUrls.has(r.url)) {
             allUrls.set(r.url, r);
           }
@@ -455,7 +456,8 @@ export const buildSupplementalKnowledgeBase = async (queries: string[], broadcas
       const results = response.data?.data?.webPages?.value || [];
       const contentFarms = ['baijiahao.baidu.com', 'sohu.com', '163.com', 'zhihu.com/question', 'bilibili.com'];
       results.forEach((r: any) => {
-        if (!contentFarms.some(farm => r.url.includes(farm))) {
+        const isContentFarm = contentFarms.some(farm => r.url.includes(farm));
+        if (length === 'collection' || !isContentFarm) {
           if (!allUrls.has(r.url)) {
             allUrls.set(r.url, r);
           }
